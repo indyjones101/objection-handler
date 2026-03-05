@@ -1,15 +1,19 @@
 import { useState, useEffect } from "react";
 
 const OBJECTIONS = [
-  "We already have a system",
-  "We're not looking right now",
+  "I'm really busy right now",
   "Send me an email",
+  "We don't have time to switch systems right now",
+  "Our manager handles all the hiring",
+  "We're not looking right now",
+  "Call me back next quarter",
+  "We already have a system",
+  "We're using Indeed and it's working fine",
   "We don't have budget",
+  "We're happy with what we have",
   "I'm not the right person",
   "We tried something like this before",
-  "Call me back next quarter",
-  "We're happy with what we have",
-  "I'm really busy right now",
+  "We've never had trouble finding workers",
 ];
 
 const CACHE_KEY = "workstream-objection-cache";
