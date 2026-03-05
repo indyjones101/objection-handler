@@ -4,6 +4,7 @@ const OBJECTIONS = [
   "I'm really busy right now",
   "Send me an email",
   "We don't have time to switch systems right now",
+  "What sets you apart from competitors?",
   "Our manager handles all the hiring",
   "We're not looking right now",
   "Call me back next quarter",
@@ -128,6 +129,7 @@ export default function App() {
 
   const labelColors = {
     "Curious & Disarming": { bg: "#1a2a1a", border: "#2d5a2d", text: "#6ee86e", dot: "#4caf50" },
+    "Pain-Led": { bg: "#2a1a2a", border: "#6e2d5a", text: "#ff8ce8", dot: "#ff4fcc" },
     "Value-Led": { bg: "#1a1f2e", border: "#2d3f6e", text: "#7eb3ff", dot: "#4a7fff" },
     "Challenge & Redirect": { bg: "#2a1a1a", border: "#6e2d2d", text: "#ff8c8c", dot: "#ff4f4f" },
   };
