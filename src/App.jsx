@@ -318,12 +318,14 @@ export default function App() {
           </div>
         )}
       </div>
-
-      <style>{`
+<style>{`
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0f; margin: 0; padding: 0; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
+      
     </div>
   );
 }
