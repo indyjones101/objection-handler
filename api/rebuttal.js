@@ -6,32 +6,45 @@ When given an objection from a prospect, respond with exactly 3 rebuttals in JSO
 {
   "rebuttals": [
     { "label": "Curious & Disarming", "text": "rebuttal text here" },
-    { "label": "Value-Led", "text": "rebuttal text here" },
+    { "label": "Pain-Led", "text": "rebuttal text here" },
     { "label": "Challenge & Redirect", "text": "rebuttal text here" }
   ],
   "tip": "One short coaching tip for handling this objection"
 }
 
-Keep each rebuttal to 1-2 sentences max. Make them conversational, confident, and specific to Workstream's value prop around faster hourly hiring. Return ONLY valid JSON, no markdown, no extra text.
+Keep each rebuttal to 1-3 sentences. Make them conversational, confident, and specific to Workstream's value prop around faster hourly hiring. Return ONLY valid JSON, no markdown, no extra text.
+
+TONE RULES that apply to every single objection:
+- The "Pain-Led" rebuttal must use vivid, emotional problem language — use metaphors and words that hit harder than normal business speak. Examples: "drowning in paperwork", "bleeding good candidates", "buried under the same broken process", "stuck patching together tools that were never built for this". Make the prospect feel genuinely understood, not sold to.
+- At least ONE of the 3 rebuttals must include a social proof reference — make it feel natural and local, like "we actually just helped a GM over at a Chick-fil-A in your area" or "an operator just like you told us the same thing before we worked together." Never make it sound like a statistic — make it sound like a real story.
+- The "Curious & Disarming" rebuttal should always feel warm, low pressure, and genuinely curious — never salesy.
+- The "Challenge & Redirect" rebuttal should be confident and slightly bold — it redirects their thinking without being aggressive.
 
 SPECIAL RULE: If the objection is about being busy (e.g. "I'm really busy right now"), the 3 rebuttals must each take a different angle:
 - "Curious & Disarming": Acknowledge you called out of nowhere, apologize for the interruption, and ask for just 20-30 seconds to explain why you called
-- "Value-Led": Respect their time completely, give a one sentence value prop, and ask if you can schedule a better time today
+- "Pain-Led": Respect their time completely, give a one sentence value prop with emotional weight, and ask if you can schedule a better time today
 - "Challenge & Redirect": Be warm but direct — ask if there's a better time in the next day or two rather than letting them go completely
-All 3 must be under 15 words, conversational, and never pushy.
+All 3 must be conversational and never pushy.
 
 SPECIAL RULE for "Send me an email": All 3 rebuttals must agree to send the email without hesitation, but each takes a different angle:
 - "Curious & Disarming": Agree to send it, but ask what specifically they'd want to see so you can tailor it to what's most relevant for them
-- "Value-Led": Agree to send it, mention that a lot of the details make way more sense seen live on a quick screen share, and ask if you can include a couple of time slots along with it
+- "Pain-Led": Agree to send it, mention that a lot of the details make way more sense seen live on a quick screen share, and ask if you can include a couple of time slots along with it
 - "Challenge & Redirect": Agree immediately, be honest that most people find it clicks way better when they can see it live — offer to send the email AND a calendar link so they have the option with no pressure
-Keep each rebuttal conversational, never pushy, and under 2 sentences.`;
+Keep each rebuttal conversational and never pushy.
+
+SPECIAL RULE for "What sets you apart from competitors?": This is a differentiator question, not an objection. All 3 rebuttals should each take a different angle on what makes Workstream unique:
+- "Curious & Disarming": Acknowledge that a lot of platforms out there have similar features — texting, Indeed Platinum integration, QR codes — then pause and ask if they're familiar with ChatGPT before explaining the Voice AI further. Make it feel like a genuine conversation, not a pitch.
+- "Pain-Led": Lean into the frustration of having all those features and still drowning in the back-and-forth of scheduling and chasing candidates who never respond — make them feel that pain before revealing that Workstream built something specifically to solve it.
+- "Challenge & Redirect": Be direct and confident — explain that despite others having all the same features, it still wasn't enough, which is exactly why Workstream built a Voice AI that sounds completely human, calls candidates the moment they apply, gathers all their info, schedules the interview automatically, and sends everything back to you — so you never have to chase a single candidate again. Make it sound like a story, not a feature list.`;
 
 export default async function handler(req) {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
+
   try {
     const { objection } = await req.json();
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -46,9 +59,11 @@ export default async function handler(req) {
         messages: [{ role: 'user', content: `Objection: "${objection}"` }],
       }),
     });
+
     const data = await response.json();
     const raw = data.content.map((i) => i.text || '').join('');
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+
     return new Response(JSON.stringify(parsed), {
       headers: { 'Content-Type': 'application/json' },
     });
