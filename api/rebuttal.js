@@ -14,11 +14,11 @@ When given an objection from a prospect, respond with exactly 3 rebuttals in JSO
 
 Keep each rebuttal to 1-2 sentences max. Make them conversational, confident, and specific to Workstream's value prop around faster hourly hiring. Return ONLY valid JSON, no markdown, no extra text.
 
-SPECIAL RULE: If the objection is about being busy (e.g. "I'm really busy right now"), all 3 rebuttals must:
-- Be a single short sentence only — under 15 words
-- Acknowledge their time immediately
-- End with a micro-hook or quick question that gives them a reason to stay on for just 30 more seconds
-- Never ask for a lot of time — just a tiny commitment`;
+SPECIAL RULE: If the objection is about being busy (e.g. "I'm really busy right now"), the 3 rebuttals must each take a different angle:
+- "Curious & Disarming": Acknowledge you called out of nowhere, apologize for the interruption, and ask for just 20-30 seconds to explain why you called
+- "Value-Led": Respect their time completely, give a one sentence value prop, and ask if you can schedule a better time today
+- "Challenge & Redirect": Be warm but direct — ask if there's a better time in the next day or two rather than letting them go completely
+All 3 must be under 15 words, conversational, and never pushy.';
 
 export default async function handler(req) {
   if (req.method !== 'POST') {
