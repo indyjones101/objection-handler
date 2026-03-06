@@ -622,22 +622,26 @@ function ProspectScanner() {
   const [prospects, setProspects] = useLocalStorage("ws_prospects", []);
   const [urlInput, setUrlInput] = useState("");
   const [bulkInput, setBulkInput] = useState("");
-  const [inputMode, setInputMode] = useState("single"); // single | bulk
+  const [brandInput, setBrandInput] = useState("");
+  const [inputMode, setInputMode] = useState("auto"); // auto | single | bulk
   const [scanning, setScanning] = useState(false);
   const [scanningUrl, setScanningUrl] = useState("");
+  const [findingUrls, setFindingUrls] = useState(false);
+  const [queuedUrls, setQueuedUrls] = useState([]);
+  const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, skipped: 0 });
   const [filterProvider, setFilterProvider] = useState("all");
   const [toast, setToast] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(null), 2400); };
 
-  const scanUrl = async (url) => {
+  // Returns true if added as prospect, false if skipped (Workstream/dupe)
+  const scanUrl = async (url, silent = false) => {
     const trimmed = url.trim();
-    if (!trimmed) return;
-    if (prospects.find(p => p.url === trimmed)) { showToast("Already scanned this URL"); return; }
+    if (!trimmed) return false;
+    if (prospects.find(p => p.url === trimmed)) return false;
 
     setScanningUrl(trimmed);
-    setScanning(true);
 
     try {
       const response = await fetch("/api/scanner", {
@@ -648,6 +652,12 @@ function ProspectScanner() {
 
       if (!response.ok) throw new Error("API error");
       const parsed = await response.json();
+
+      // Skip Workstream customers silently
+      if (parsed.provider === "Workstream") {
+        if (!silent) showToast("✅ Already a Workstream customer — skipped");
+        return false;
+      }
 
       const result = {
         id: Date.now(),
@@ -663,11 +673,12 @@ function ProspectScanner() {
       };
 
       setProspects(prev => [result, ...prev]);
-      showToast(result.provider === "Workstream" ? "✅ Workstream customer!" : result.provider === "Unknown" ? "⚠️ Unknown provider" : `🎯 Prospect! Uses ${result.provider}`);
+      if (!silent) showToast(parsed.provider === "Unknown" ? "⚠️ Unknown provider" : `🎯 Prospect found! Uses ${parsed.provider}`);
+      return true;
     } catch (e) {
-      showToast("Scan failed — check the URL and try again");
+      if (!silent) showToast("Scan failed — check the URL and try again");
+      return false;
     } finally {
-      setScanning(false);
       setScanningUrl("");
     }
   };
@@ -675,19 +686,64 @@ function ProspectScanner() {
   const scanBulk = async () => {
     const urls = bulkInput.split("\n").map(u => u.trim()).filter(u => u.length > 0);
     if (!urls.length) return;
-    for (const url of urls) {
-      await scanUrl(url);
-      await new Promise(r => setTimeout(r, 800));
+    setScanning(true);
+    setScanProgress({ current: 0, total: urls.length, skipped: 0 });
+    let skipped = 0;
+    for (let i = 0; i < urls.length; i++) {
+      const added = await scanUrl(urls[i], true);
+      if (!added) skipped++;
+      setScanProgress({ current: i + 1, total: urls.length, skipped });
+      await new Promise(r => setTimeout(r, 600));
     }
+    setScanning(false);
     setBulkInput("");
-    showToast(`Scanned ${urls.length} URLs!`);
+    showToast(`Done! ${urls.length - skipped} prospects found, ${skipped} Workstream/dupes skipped.`);
+  };
+
+  const autoFind = async () => {
+    if (!brandInput.trim()) return;
+    setFindingUrls(true);
+    showToast(`Searching for ${brandInput} franchise locations...`);
+    try {
+      const res = await fetch("/api/find-locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand: brandInput.trim() }),
+      });
+      if (!res.ok) throw new Error("API error");
+      const data = await res.json();
+      if (!data.urls || data.urls.length === 0) {
+        showToast("No URLs found — try a different brand name");
+        setFindingUrls(false);
+        return;
+      }
+      setFindingUrls(false);
+      setScanning(true);
+      setScanProgress({ current: 0, total: data.urls.length, skipped: 0 });
+      let skipped = 0;
+      for (let i = 0; i < data.urls.length; i++) {
+        const added = await scanUrl(data.urls[i], true);
+        if (!added) skipped++;
+        setScanProgress({ current: i + 1, total: data.urls.length, skipped });
+        await new Promise(r => setTimeout(r, 800));
+      }
+      setScanning(false);
+      showToast(`Done! ${data.urls.length - skipped} prospects found, ${skipped} Workstream/dupes skipped.`);
+    } catch (e) {
+      showToast("Search failed — try again");
+      setFindingUrls(false);
+      setScanning(false);
+    }
   };
 
   const deleteProspect = id => setProspects(prev => prev.filter(p => p.id !== id));
 
   const exportCSV = () => {
+    // Only export non-Workstream prospects
+    const exportable = prospects.filter(p => p.provider !== "Workstream");
+    if (!exportable.length) { showToast("No prospects to export yet!"); return; }
     const headers = ["Date","URL","Provider","Entity","City","State","Locations","Confidence","Notes"];
-    const rows = prospects.map(p => [
+    const rows = exportable.map(p => [
       formatDate(p.ts), p.url, p.provider, p.entity||"—", p.city||"—", p.state||"—",
       p.locations||"—", p.confidence, p.notes
     ]);
@@ -696,7 +752,7 @@ function ProspectScanner() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href=url; a.download=`prospects-${new Date().toISOString().slice(0,10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
-    showToast("CSV exported!");
+    showToast(`Exported ${exportable.length} prospects!`);
   };
 
   const filtered = filterProvider === "all" ? prospects : filterProvider === "not-workstream" ? prospects.filter(p => p.provider !== "Workstream" && p.provider !== "Unknown") : prospects.filter(p => p.provider === filterProvider);
@@ -725,15 +781,41 @@ function ProspectScanner() {
 
       {/* Input mode toggle */}
       <div style={{ display:"flex", marginBottom:"16px", border:"1px solid #2a2520", borderRadius:"6px", overflow:"hidden", width:"fit-content" }}>
-        {[["single","Single URL"],["bulk","Bulk URLs"]].map(([mode,label]) => (
+        {[["auto","🤖 Auto-Find"],["single","Single URL"],["bulk","Bulk URLs"]].map(([mode,label]) => (
           <button key={mode} onClick={() => setInputMode(mode)} style={{
             padding:"8px 20px", border:"none", fontSize:"12px", fontFamily:"monospace",
-            letterSpacing:"0.1em", textTransform:"uppercase",
+            letterSpacing:"0.08em", textTransform:"uppercase",
             background: inputMode === mode ? "#ff7832" : "transparent",
             color: inputMode === mode ? "#0a0a0f" : "#7a7060", transition:"all 0.2s",
           }}>{label}</button>
         ))}
       </div>
+
+      {/* Auto-find by brand */}
+      {inputMode === "auto" && (
+        <div style={{ marginBottom:24 }}>
+          <div style={{ padding:"14px 18px", background:"rgba(255,120,50,0.05)", border:"1px solid rgba(255,120,50,0.15)", borderRadius:8, marginBottom:14 }}>
+            <div style={{ fontSize:11, color:"#ff7832", fontFamily:"monospace", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:6 }}>How it works</div>
+            <p style={{ fontSize:12, color:"#7a7060", lineHeight:1.7, margin:0 }}>
+              Type a brand name → Claude searches the web for franchise career URLs → scans each one → <strong style={{color:"#f5ede0"}}>Workstream locations are automatically skipped</strong> → only prospects show up in your list and CSV.
+            </p>
+          </div>
+          <div style={{ display:"flex", gap:10 }}>
+            <input
+              value={brandInput} onChange={e => setBrandInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && autoFind()}
+              placeholder="e.g. Smoothie King, Anytime Fitness, Popeyes..."
+              style={{ flex:1, border:"1px solid #2a2520", borderRadius:8, padding:"12px 14px", fontSize:13, fontFamily:"monospace", background:"rgba(255,255,255,0.03)", color:"#e8e0d0" }}
+            />
+            <button onClick={autoFind} disabled={scanning || findingUrls || !brandInput.trim()} style={{
+              background: scanning || findingUrls || !brandInput.trim() ? "#1a1a14" : "#ff7832",
+              color: scanning || findingUrls || !brandInput.trim() ? "#4a4030" : "#0a0a0f",
+              border:"none", borderRadius:8, padding:"0 20px", fontSize:12,
+              fontFamily:"monospace", fontWeight:700, letterSpacing:"0.08em", whiteSpace:"nowrap",
+            }}>{findingUrls ? "Finding..." : scanning ? "Scanning..." : "Auto-Find →"}</button>
+          </div>
+        </div>
+      )}
 
       {/* Single URL input */}
       {inputMode === "single" && (
@@ -744,7 +826,7 @@ function ProspectScanner() {
             placeholder="https://careers.smoothieking.com/franchise/odessa..."
             style={{ flex:1, border:"1px solid #2a2520", borderRadius:8, padding:"12px 14px", fontSize:13, fontFamily:"monospace", background:"rgba(255,255,255,0.03)", color:"#e8e0d0" }}
           />
-          <button onClick={() => { scanUrl(urlInput); setUrlInput(""); }} disabled={scanning || !urlInput.trim()} style={{
+          <button onClick={() => { setScanning(true); scanUrl(urlInput).then(() => setScanning(false)); setUrlInput(""); }} disabled={scanning || !urlInput.trim()} style={{
             background: scanning || !urlInput.trim() ? "#1a1a14" : "#ff7832",
             color: scanning || !urlInput.trim() ? "#4a4030" : "#0a0a0f",
             border:"none", borderRadius:8, padding:"0 20px", fontSize:12,
@@ -766,17 +848,32 @@ function ProspectScanner() {
             color: scanning || !bulkInput.trim() ? "#4a4030" : "#0a0a0f",
             border:"none", borderRadius:8, padding:"11px 24px", fontSize:12,
             fontFamily:"monospace", fontWeight:700, letterSpacing:"0.08em",
-          }}>{scanning ? `Scanning ${scanningUrl.slice(0,30)}...` : "Scan All →"}</button>
+          }}>{scanning ? "Scanning..." : "Scan All →"}</button>
         </div>
       )}
 
-      {/* Scanning indicator */}
-      {scanning && (
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, padding:"12px 16px", background:"rgba(255,120,50,0.05)", border:"1px solid rgba(255,120,50,0.15)", borderRadius:8 }}>
-          <div style={{ display:"flex", gap:4 }}>
-            {[0,1,2].map(i => <div key={i} style={{ width:6, height:6, borderRadius:"50%", background:"#ff7832", animation:`bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
+      {/* Progress indicator */}
+      {(scanning || findingUrls) && (
+        <div style={{ marginBottom:16, padding:"14px 18px", background:"rgba(255,120,50,0.05)", border:"1px solid rgba(255,120,50,0.15)", borderRadius:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: scanProgress.total > 0 ? 10 : 0 }}>
+            <div style={{ display:"flex", gap:4 }}>
+              {[0,1,2].map(i => <div key={i} style={{ width:6, height:6, borderRadius:"50%", background:"#ff7832", animation:`bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
+            </div>
+            <span style={{ fontSize:12, fontFamily:"monospace", color:"#ff7832", letterSpacing:"0.06em" }}>
+              {findingUrls ? `Finding ${brandInput} locations...` : `Scanning ${scanningUrl.length > 40 ? scanningUrl.slice(0,40)+"..." : scanningUrl}`}
+            </span>
           </div>
-          <span style={{ fontSize:12, fontFamily:"monospace", color:"#ff7832", letterSpacing:"0.06em" }}>Scanning {scanningUrl.length > 50 ? scanningUrl.slice(0,50)+"..." : scanningUrl}</span>
+          {scanProgress.total > 0 && (
+            <div>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                <span style={{ fontSize:11, color:"#7a7060", fontFamily:"monospace" }}>{scanProgress.current} / {scanProgress.total} scanned</span>
+                <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace" }}>⏭ {scanProgress.skipped} Workstream skipped</span>
+              </div>
+              <div style={{ height:4, background:"#1a1a14", borderRadius:99, overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${(scanProgress.current/scanProgress.total)*100}%`, background:"#ff7832", borderRadius:99, transition:"width 0.3s ease" }} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
