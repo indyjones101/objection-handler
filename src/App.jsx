@@ -28,12 +28,12 @@ async function fetchRebuttal(objection) {
 }
 
 // ── Call Tracker Data ──────────────────────────────────────────────
-const OPENERS = [
+const DEFAULT_OPENERS = [
   { id: "o1", text: "Hey [Name], I'll be upfront — this is a cold call. Got 24 seconds?" },
   { id: "o2", text: "Hey [Name], have you heard Workstream's name tossed around at all?" },
   { id: "o3", text: "Hey [Name], is it alright if I take just 24 seconds to tell you why I'm calling — and then you can tell me if it makes sense to keep talking?" },
 ];
-const HOOKS = [
+const DEFAULT_HOOKS = [
   { id: "h1", text: "We take all the manual work out of recruiting + onboarding for you." },
   { id: "h2", text: "We help companies hire faster and manage their workforce all in one place." },
   { id: "h3", text: "We help teams fill positions in days rather than weeks." },
@@ -113,12 +113,13 @@ export default function App() {
         </div>
 
         {/* Tab Nav */}
-        <div style={{ display:"flex", gap:"2px", marginBottom:"36px", background:"rgba(255,255,255,0.03)", border:"1px solid #2a2520", borderRadius:"6px", padding:"4px", width:"fit-content" }}>
+        <div style={{ display:"flex", gap:"2px", marginBottom:"36px", background:"rgba(255,255,255,0.03)", border:"1px solid #2a2520", borderRadius:"6px", padding:"4px", flexWrap:"wrap" }}>
           {[
-            ["objections", "🥊 Objection Handler"],
+            ["objections", "🥊 Objections"],
             ["log",        "📞 Log Call"],
             ["dashboard",  "📊 Stats"],
             ["history",    "🗂 History"],
+            ["scanner",    "🔍 Prospect Scanner"],
           ].map(([tab, label]) => (
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
               padding:"8px 18px", borderRadius:"4px", border:"none",
@@ -135,6 +136,7 @@ export default function App() {
         {(activeTab === "log" || activeTab === "dashboard" || activeTab === "history") && (
           <CallTracker activeTab={activeTab} setActiveTab={setActiveTab} />
         )}
+        {activeTab === "scanner" && <ProspectScanner />}
       </div>
     </div>
   );
@@ -317,6 +319,8 @@ function ObjectionHandler() {
 // CALL TRACKER
 // ══════════════════════════════════════════════════════════════════
 function CallTracker({ activeTab, setActiveTab }) {
+  const [openers, setOpeners] = useLocalStorage("ws_openers", DEFAULT_OPENERS);
+  const [hooks, setHooks] = useLocalStorage("ws_hooks", DEFAULT_HOOKS);
   const [situationalQs, setSituationalQs] = useLocalStorage("ws_sqs", DEFAULT_SQS);
   const [painPoints, setPainPoints] = useLocalStorage("ws_pain", DEFAULT_PAIN);
   const [calls, setCalls] = useLocalStorage("ws_calls", []);
@@ -352,7 +356,9 @@ function CallTracker({ activeTab, setActiveTab }) {
   const addItem = type => {
     if (!newItemText.trim()) return;
     const id = type + Date.now();
-    if (type === "sq") setSituationalQs(prev => [...prev, { id, text: newItemText.trim() }]);
+    if (type === "opener") setOpeners(prev => [...prev, { id, text: newItemText.trim() }]);
+    else if (type === "hook") setHooks(prev => [...prev, { id, text: newItemText.trim() }]);
+    else if (type === "sq") setSituationalQs(prev => [...prev, { id, text: newItemText.trim() }]);
     else setPainPoints(prev => [...prev, { id, text: newItemText.trim() }]);
     setNewItemText(""); setAddingItem(null);
   };
@@ -363,8 +369,8 @@ function CallTracker({ activeTab, setActiveTab }) {
     const headers = ["Date","Answered","Opener","7-Sec Hook","Situational Q","Pain Point","Meeting Booked"];
     const rows = calls.map(c => [
       formatDate(c.ts), c.answered?"Yes":"No",
-      c.opener ? getLabel(c.opener,[OPENERS]) : "—",
-      c.hook   ? getLabel(c.hook,[HOOKS])     : "—",
+      c.opener ? getLabel(c.opener,[openers]) : "—",
+      c.hook   ? getLabel(c.hook,[hooks])     : "—",
       c.sq     ? getLabel(c.sq,[situationalQs]) : "—",
       c.pain   ? getLabel(c.pain,[painPoints])  : "—",
       c.meeting?"Yes":c.answered?"No":"—",
@@ -379,8 +385,8 @@ function CallTracker({ activeTab, setActiveTab }) {
   const analytics = useMemo(() => {
     const total = calls.length, answered = calls.filter(c=>c.answered).length, meetings = calls.filter(c=>c.meeting).length;
     const byOpener={}, byHook={}, bySQ={}, byPain={};
-    OPENERS.forEach(o=>{byOpener[o.id]=emptyRate()});
-    HOOKS.forEach(h=>{byHook[h.id]=emptyRate()});
+    openers.forEach(o=>{byOpener[o.id]=emptyRate()});
+    hooks.forEach(h=>{byHook[h.id]=emptyRate()});
     situationalQs.forEach(q=>{bySQ[q.id]=emptyRate()});
     painPoints.forEach(p=>{byPain[p.id]=emptyRate()});
     calls.filter(c=>c.answered).forEach(c=>{
@@ -390,7 +396,7 @@ function CallTracker({ activeTab, setActiveTab }) {
       if(c.pain&&byPain[c.pain]){byPain[c.pain].uses++;if(c.meeting)byPain[c.pain].meetings++;}
     });
     return {total,answered,meetings,byOpener,byHook,bySQ,byPain};
-  }, [calls,situationalQs,painPoints]);
+  }, [calls,openers,hooks,situationalQs,painPoints]);
 
   const STEP_LABELS = ["","Start","Answered?","Opener","7-Sec Hook","Situational Q","Pain Point","Outcome"];
 
@@ -450,14 +456,22 @@ function CallTracker({ activeTab, setActiveTab }) {
           {step === 3 && (
             <div style={cardStyle} className="fade-up">
               <span style={labelStyle}>Which opener did you use?</span>
-              {OPENERS.map(o=><button key={o.id} className="choice" onClick={()=>pick("opener",o.id)} style={choiceBtn(current.opener===o.id)}>{o.text}</button>)}
+              {openers.map(o=><button key={o.id} className="choice" onClick={()=>pick("opener",o.id)} style={choiceBtn(current.opener===o.id)}>{o.text}</button>)}
+              {addingItem==="opener"
+                ? <div style={{display:"flex",gap:8,marginTop:4}}><input autoFocus value={newItemText} onChange={e=>setNewItemText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem("opener")} placeholder="New opener..." style={{flex:1,border:"1px solid #2a2520",borderRadius:8,padding:"10px 13px",fontSize:13,fontFamily:"'Georgia',serif",background:"rgba(255,255,255,0.03)",color:"#e8e0d0"}} /><button onClick={()=>addItem("opener")} style={{background:"#ff7832",color:"#0a0a0f",border:"none",borderRadius:8,padding:"0 16px",fontSize:12,fontFamily:"monospace",fontWeight:700}}>Add</button><button onClick={()=>{setAddingItem(null);setNewItemText("")}} style={{background:"#1a1a14",color:"#7a7060",border:"1px solid #2a2520",borderRadius:8,padding:"0 12px",fontSize:12}}>✕</button></div>
+                : <button onClick={()=>setAddingItem("opener")} style={{color:"#4a4030",background:"none",border:"1px dashed #2a2520",borderRadius:8,padding:"10px 16px",fontSize:13,width:"100%",marginTop:2,fontFamily:"monospace",letterSpacing:"0.06em"}}>+ Add new opener</button>
+              }
             </div>
           )}
 
           {step === 4 && (
             <div style={cardStyle} className="fade-up">
               <span style={labelStyle}>Which 7-second hook did you use?</span>
-              {HOOKS.map(h=><button key={h.id} className="choice" onClick={()=>pick("hook",h.id)} style={choiceBtn(current.hook===h.id)}>{h.text}</button>)}
+              {hooks.map(h=><button key={h.id} className="choice" onClick={()=>pick("hook",h.id)} style={choiceBtn(current.hook===h.id)}>{h.text}</button>)}
+              {addingItem==="hook"
+                ? <div style={{display:"flex",gap:8,marginTop:4}}><input autoFocus value={newItemText} onChange={e=>setNewItemText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem("hook")} placeholder="New 7-second hook..." style={{flex:1,border:"1px solid #2a2520",borderRadius:8,padding:"10px 13px",fontSize:13,fontFamily:"'Georgia',serif",background:"rgba(255,255,255,0.03)",color:"#e8e0d0"}} /><button onClick={()=>addItem("hook")} style={{background:"#ff7832",color:"#0a0a0f",border:"none",borderRadius:8,padding:"0 16px",fontSize:12,fontFamily:"monospace",fontWeight:700}}>Add</button><button onClick={()=>{setAddingItem(null);setNewItemText("")}} style={{background:"#1a1a14",color:"#7a7060",border:"1px solid #2a2520",borderRadius:8,padding:"0 12px",fontSize:12}}>✕</button></div>
+                : <button onClick={()=>setAddingItem("hook")} style={{color:"#4a4030",background:"none",border:"1px dashed #2a2520",borderRadius:8,padding:"10px 16px",fontSize:13,width:"100%",marginTop:2,fontFamily:"monospace",letterSpacing:"0.06em"}}>+ Add new hook</button>
+              }
             </div>
           )}
 
@@ -520,8 +534,8 @@ function CallTracker({ activeTab, setActiveTab }) {
             ))}
           </div>
 
-          {(filterStep==="all"||filterStep==="opener") && <BreakdownSection title="Openers" items={OPENERS} data={analytics.byOpener} />}
-          {(filterStep==="all"||filterStep==="hook")   && <BreakdownSection title="7-Second Hooks" items={HOOKS} data={analytics.byHook} />}
+          {(filterStep==="all"||filterStep==="opener") && <BreakdownSection title="Openers" items={openers} data={analytics.byOpener} />}
+          {(filterStep==="all"||filterStep==="hook")   && <BreakdownSection title="7-Second Hooks" items={hooks} data={analytics.byHook} />}
           {(filterStep==="all"||filterStep==="sq")     && <BreakdownSection title="Situational Questions" items={situationalQs} data={analytics.bySQ} />}
           {(filterStep==="all"||filterStep==="pain")   && <BreakdownSection title="Pain Points" items={painPoints} data={analytics.byPain} />}
 
@@ -565,8 +579,8 @@ function CallTracker({ activeTab, setActiveTab }) {
                   </div>
                   {call.answered && (
                     <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:4}}>
-                      {call.opener && <div style={{fontSize:12,color:"#a89880"}}><span style={{color:"#4a4030",marginRight:6,fontFamily:"monospace"}}>Opener:</span>{getLabel(call.opener,[OPENERS])}</div>}
-                      {call.hook   && <div style={{fontSize:12,color:"#a89880"}}><span style={{color:"#4a4030",marginRight:6,fontFamily:"monospace"}}>Hook:</span>{getLabel(call.hook,[HOOKS])}</div>}
+                      {call.opener && <div style={{fontSize:12,color:"#a89880"}}><span style={{color:"#4a4030",marginRight:6,fontFamily:"monospace"}}>Opener:</span>{getLabel(call.opener,[openers])}</div>}
+                      {call.hook   && <div style={{fontSize:12,color:"#a89880"}}><span style={{color:"#4a4030",marginRight:6,fontFamily:"monospace"}}>Hook:</span>{getLabel(call.hook,[hooks])}</div>}
                       {call.sq     && <div style={{fontSize:12,color:"#a89880"}}><span style={{color:"#4a4030",marginRight:6,fontFamily:"monospace"}}>Question:</span>{getLabel(call.sq,[situationalQs])}</div>}
                       {call.pain   && <div style={{fontSize:12,color:"#a89880"}}><span style={{color:"#4a4030",marginRight:6,fontFamily:"monospace"}}>Pain point:</span>{getLabel(call.pain,[painPoints])}</div>}
                     </div>
@@ -581,6 +595,264 @@ function CallTracker({ activeTab, setActiveTab }) {
 
       {toast && (
         <div className="toast-in" style={{position:"fixed",bottom:24,right:24,background:"#ff7832",color:"#0a0a0f",borderRadius:8,padding:"12px 20px",fontSize:13,fontWeight:700,fontFamily:"monospace",letterSpacing:"0.08em",boxShadow:"0 8px 28px rgba(255,120,50,0.3)",zIndex:999}}>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PROSPECT SCANNER
+// ══════════════════════════════════════════════════════════════════
+const ATS_PROVIDERS = ["Workstream","ADP","TalentReef","iCIMS","Paradox","UKG","Paycom","Paylocity","BambooHR","Greenhouse","Lever","SmartRecruiters","Workday","SuccessFactors","JazzHR","Indeed","Other"];
+
+const PROVIDER_COLORS = {
+  "Workstream":     { bg:"rgba(76,175,80,0.1)",   border:"rgba(76,175,80,0.3)",   text:"#4caf50" },
+  "ADP":            { bg:"rgba(255,120,50,0.1)",   border:"rgba(255,120,50,0.3)",  text:"#ff7832" },
+  "TalentReef":     { bg:"rgba(126,179,255,0.1)",  border:"rgba(126,179,255,0.3)", text:"#7eb3ff" },
+  "iCIMS":          { bg:"rgba(255,140,232,0.1)",  border:"rgba(255,140,232,0.3)", text:"#ff8ce8" },
+  "Paradox":        { bg:"rgba(200,150,255,0.1)",  border:"rgba(200,150,255,0.3)", text:"#c896ff" },
+  "Unknown":        { bg:"rgba(120,112,96,0.1)",   border:"rgba(120,112,96,0.3)",  text:"#7a7060" },
+};
+
+function getProviderColor(p) { return PROVIDER_COLORS[p] || { bg:"rgba(120,112,96,0.1)", border:"rgba(120,112,96,0.3)", text:"#7a7060" }; }
+
+function ProspectScanner() {
+  const [prospects, setProspects] = useLocalStorage("ws_prospects", []);
+  const [urlInput, setUrlInput] = useState("");
+  const [bulkInput, setBulkInput] = useState("");
+  const [inputMode, setInputMode] = useState("single"); // single | bulk
+  const [scanning, setScanning] = useState(false);
+  const [scanningUrl, setScanningUrl] = useState("");
+  const [filterProvider, setFilterProvider] = useState("all");
+  const [toast, setToast] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const showToast = msg => { setToast(msg); setTimeout(() => setToast(null), 2400); };
+
+  const scanUrl = async (url) => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    if (prospects.find(p => p.url === trimmed)) { showToast("Already scanned this URL"); return; }
+
+    setScanningUrl(trimmed);
+    setScanning(true);
+
+    try {
+      const response = await fetch("/api/scanner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmed }),
+      });
+
+      if (!response.ok) throw new Error("API error");
+      const parsed = await response.json();
+
+      const result = {
+        id: Date.now(),
+        url: trimmed,
+        ts: new Date().toISOString(),
+        provider: parsed.provider || "Unknown",
+        entity: parsed.entity || null,
+        city: parsed.city || null,
+        state: parsed.state || null,
+        locations: parsed.locations || null,
+        confidence: parsed.confidence || "Low",
+        notes: parsed.notes || "",
+      };
+
+      setProspects(prev => [result, ...prev]);
+      showToast(result.provider === "Workstream" ? "✅ Workstream customer!" : result.provider === "Unknown" ? "⚠️ Unknown provider" : `🎯 Prospect! Uses ${result.provider}`);
+    } catch (e) {
+      showToast("Scan failed — check the URL and try again");
+    } finally {
+      setScanning(false);
+      setScanningUrl("");
+    }
+  };
+
+  const scanBulk = async () => {
+    const urls = bulkInput.split("\n").map(u => u.trim()).filter(u => u.length > 0);
+    if (!urls.length) return;
+    for (const url of urls) {
+      await scanUrl(url);
+      await new Promise(r => setTimeout(r, 800));
+    }
+    setBulkInput("");
+    showToast(`Scanned ${urls.length} URLs!`);
+  };
+
+  const deleteProspect = id => setProspects(prev => prev.filter(p => p.id !== id));
+
+  const exportCSV = () => {
+    const headers = ["Date","URL","Provider","Entity","City","State","Locations","Confidence","Notes"];
+    const rows = prospects.map(p => [
+      formatDate(p.ts), p.url, p.provider, p.entity||"—", p.city||"—", p.state||"—",
+      p.locations||"—", p.confidence, p.notes
+    ]);
+    const csv = [headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv],{type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download=`prospects-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    showToast("CSV exported!");
+  };
+
+  const filtered = filterProvider === "all" ? prospects : filterProvider === "not-workstream" ? prospects.filter(p => p.provider !== "Workstream" && p.provider !== "Unknown") : prospects.filter(p => p.provider === filterProvider);
+  const prospectCount = prospects.filter(p => p.provider !== "Workstream" && p.provider !== "Unknown").length;
+  const customerCount = prospects.filter(p => p.provider === "Workstream").length;
+
+  return (
+    <div className="fade-up">
+      <p style={{ color:"#7a7060", fontSize:"15px", marginBottom:"24px", lineHeight:"1.6" }}>
+        Paste in a franchise careers page URL — Claude will detect the ATS provider, franchisee entity, and location. <span style={{color:"#ff7832"}}>Non-Workstream results = your prospects.</span>
+      </p>
+
+      {/* Stats row */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
+        {[
+          { label:"Scanned", val: prospects.length, color:"#f5ede0" },
+          { label:"🎯 Prospects", val: prospectCount, color:"#ff7832" },
+          { label:"✅ Already Customers", val: customerCount, color:"#4caf50" },
+        ].map(s => (
+          <div key={s.label} style={{background:"rgba(255,255,255,0.02)",border:"1px solid #2a2520",borderRadius:12,padding:"14px 18px"}}>
+            <div style={{fontSize:10,color:"#7a7060",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:6,fontFamily:"monospace"}}>{s.label}</div>
+            <div style={{fontSize:28,fontWeight:300,color:s.color,fontFamily:"monospace"}}>{s.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Input mode toggle */}
+      <div style={{ display:"flex", marginBottom:"16px", border:"1px solid #2a2520", borderRadius:"6px", overflow:"hidden", width:"fit-content" }}>
+        {[["single","Single URL"],["bulk","Bulk URLs"]].map(([mode,label]) => (
+          <button key={mode} onClick={() => setInputMode(mode)} style={{
+            padding:"8px 20px", border:"none", fontSize:"12px", fontFamily:"monospace",
+            letterSpacing:"0.1em", textTransform:"uppercase",
+            background: inputMode === mode ? "#ff7832" : "transparent",
+            color: inputMode === mode ? "#0a0a0f" : "#7a7060", transition:"all 0.2s",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {/* Single URL input */}
+      {inputMode === "single" && (
+        <div style={{ display:"flex", gap:10, marginBottom:24 }}>
+          <input
+            value={urlInput} onChange={e => setUrlInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && scanUrl(urlInput)}
+            placeholder="https://careers.smoothieking.com/franchise/odessa..."
+            style={{ flex:1, border:"1px solid #2a2520", borderRadius:8, padding:"12px 14px", fontSize:13, fontFamily:"monospace", background:"rgba(255,255,255,0.03)", color:"#e8e0d0" }}
+          />
+          <button onClick={() => { scanUrl(urlInput); setUrlInput(""); }} disabled={scanning || !urlInput.trim()} style={{
+            background: scanning || !urlInput.trim() ? "#1a1a14" : "#ff7832",
+            color: scanning || !urlInput.trim() ? "#4a4030" : "#0a0a0f",
+            border:"none", borderRadius:8, padding:"0 20px", fontSize:12,
+            fontFamily:"monospace", fontWeight:700, letterSpacing:"0.08em", whiteSpace:"nowrap",
+          }}>{scanning ? "Scanning..." : "Scan →"}</button>
+        </div>
+      )}
+
+      {/* Bulk URL input */}
+      {inputMode === "bulk" && (
+        <div style={{ marginBottom:24 }}>
+          <textarea value={bulkInput} onChange={e => setBulkInput(e.target.value)}
+            placeholder={"Paste one URL per line:\nhttps://careers.brand.com/location-1\nhttps://careers.brand.com/location-2"}
+            rows={5}
+            style={{ width:"100%", border:"1px solid #2a2520", borderRadius:8, padding:"12px 14px", fontSize:12, fontFamily:"monospace", background:"rgba(255,255,255,0.03)", color:"#e8e0d0", resize:"vertical", lineHeight:1.6 }}
+          />
+          <button onClick={scanBulk} disabled={scanning || !bulkInput.trim()} style={{
+            marginTop:8, background: scanning || !bulkInput.trim() ? "#1a1a14" : "#ff7832",
+            color: scanning || !bulkInput.trim() ? "#4a4030" : "#0a0a0f",
+            border:"none", borderRadius:8, padding:"11px 24px", fontSize:12,
+            fontFamily:"monospace", fontWeight:700, letterSpacing:"0.08em",
+          }}>{scanning ? `Scanning ${scanningUrl.slice(0,30)}...` : "Scan All →"}</button>
+        </div>
+      )}
+
+      {/* Scanning indicator */}
+      {scanning && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, padding:"12px 16px", background:"rgba(255,120,50,0.05)", border:"1px solid rgba(255,120,50,0.15)", borderRadius:8 }}>
+          <div style={{ display:"flex", gap:4 }}>
+            {[0,1,2].map(i => <div key={i} style={{ width:6, height:6, borderRadius:"50%", background:"#ff7832", animation:`bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
+          </div>
+          <span style={{ fontSize:12, fontFamily:"monospace", color:"#ff7832", letterSpacing:"0.06em" }}>Scanning {scanningUrl.length > 50 ? scanningUrl.slice(0,50)+"..." : scanningUrl}</span>
+        </div>
+      )}
+
+      {/* Filter bar */}
+      {prospects.length > 0 && (
+        <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+            <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", textTransform:"uppercase", letterSpacing:"0.06em" }}>Filter:</span>
+            {[["all","All"],["not-workstream","🎯 Prospects"],["Workstream","✅ Customers"]].map(([key,label]) => (
+              <button key={key} onClick={() => setFilterProvider(key)} style={{
+                padding:"4px 12px", borderRadius:99, border:`1px solid ${filterProvider===key?"#ff7832":"#2a2520"}`,
+                background:filterProvider===key?"rgba(255,120,50,0.15)":"transparent",
+                color:filterProvider===key?"#ff7832":"#7a7060",
+                fontSize:11, fontFamily:"monospace", letterSpacing:"0.06em",
+              }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={exportCSV} style={{ background:"#ff7832", color:"#0a0a0f", border:"none", borderRadius:8, padding:"6px 14px", fontSize:11, fontFamily:"monospace", fontWeight:700, letterSpacing:"0.06em" }}>⬇ CSV</button>
+            {confirmClear
+              ? <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <span style={{fontSize:11,color:"#7a7060",fontFamily:"monospace"}}>Sure?</span>
+                  <button onClick={()=>{setProspects([]);setConfirmClear(false);showToast("Cleared");}} style={{background:"rgba(255,79,79,0.15)",color:"#ff8c8c",border:"1px solid rgba(255,79,79,0.3)",borderRadius:8,padding:"5px 10px",fontSize:11,fontFamily:"monospace"}}>Yes</button>
+                  <button onClick={()=>setConfirmClear(false)} style={{background:"transparent",color:"#7a7060",border:"1px solid #2a2520",borderRadius:8,padding:"5px 10px",fontSize:11,fontFamily:"monospace"}}>No</button>
+                </div>
+              : <button onClick={()=>setConfirmClear(true)} style={{background:"transparent",color:"#4a4030",border:"1px solid #2a2520",borderRadius:8,padding:"6px 12px",fontSize:11,fontFamily:"monospace"}}>Clear all</button>
+            }
+          </div>
+        </div>
+      )}
+
+      {/* Results */}
+      {prospects.length === 0 && !scanning && (
+        <div style={{ textAlign:"center", color:"#4a4030", fontSize:13, padding:"48px 0", fontFamily:"monospace", lineHeight:2 }}>
+          No URLs scanned yet.<br/>Paste a franchise careers page URL above to get started.
+        </div>
+      )}
+
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {filtered.map(p => {
+          const pc = getProviderColor(p.provider);
+          const isProspect = p.provider !== "Workstream" && p.provider !== "Unknown";
+          return (
+            <div key={p.id} className="history-row" style={{ background:"rgba(255,255,255,0.02)", border:`1px solid ${isProspect?"rgba(255,120,50,0.2)":p.provider==="Workstream"?"rgba(76,175,80,0.2)":"#2a2520"}`, borderRadius:10, padding:"16px 18px", transition:"background 0.12s" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, marginBottom:8 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", marginBottom:6 }}>
+                    {/* Provider badge */}
+                    <span style={{ background:pc.bg, color:pc.text, border:`1px solid ${pc.border}`, borderRadius:99, padding:"2px 10px", fontSize:11, fontFamily:"monospace", fontWeight:700 }}>
+                      {p.provider === "Workstream" ? "✅ Workstream" : isProspect ? `🎯 ${p.provider}` : `⚠️ ${p.provider}`}
+                    </span>
+                    {/* Confidence */}
+                    <span style={{ fontSize:10, color:p.confidence==="High"?"#4caf50":p.confidence==="Medium"?"#ff7832":"#7a7060", fontFamily:"monospace", letterSpacing:"0.06em" }}>
+                      {p.confidence} confidence
+                    </span>
+                    <span style={{ fontSize:10, color:"#4a4030", fontFamily:"monospace" }}>{formatDate(p.ts)}</span>
+                  </div>
+                  {/* Entity + location */}
+                  <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:4 }}>
+                    {p.entity && <span style={{ fontSize:13, color:"#f5ede0", fontWeight:400 }}>{p.entity}</span>}
+                    {(p.city || p.state) && <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>📍 {[p.city,p.state].filter(Boolean).join(", ")}</span>}
+                    {p.locations && <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>🏪 ~{p.locations} locations</span>}
+                  </div>
+                  {/* URL */}
+                  <div style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", wordBreak:"break-all", marginBottom: p.notes ? 4 : 0 }}>{p.url}</div>
+                  {p.notes && <div style={{ fontSize:12, color:"#7a7060", fontStyle:"italic", lineHeight:1.5 }}>{p.notes}</div>}
+                </div>
+                <button className="del-btn" onClick={() => deleteProspect(p.id)} style={{ background:"none", border:"none", color:"#2a2520", fontSize:18, padding:"2px 4px", flexShrink:0 }}>×</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {toast && (
+        <div className="toast-in" style={{ position:"fixed", bottom:24, right:24, background:"#ff7832", color:"#0a0a0f", borderRadius:8, padding:"12px 20px", fontSize:13, fontWeight:700, fontFamily:"monospace", letterSpacing:"0.08em", boxShadow:"0 8px 28px rgba(255,120,50,0.3)", zIndex:999 }}>
           {toast}
         </div>
       )}
