@@ -201,7 +201,6 @@ function ObjectionHandler() {
     <div style={{ animation:"fadeIn 0.3s ease" }}>
       <p style={{ color:"#7a7060", fontSize:"15px", marginBottom:"28px", lineHeight:"1.6" }}>Drop an objection. Get 3 battle-tested rebuttals instantly.</p>
 
-      {/* Mode Toggle */}
       <div style={{ display:"flex", marginBottom:"24px", border:"1px solid #2a2520", borderRadius:"6px", overflow:"hidden", width:"fit-content" }}>
         {["quick","custom"].map(mode => (
           <button key={mode} onClick={() => setInputMode(mode)} style={{
@@ -411,17 +410,14 @@ function CallTracker({ activeTab, setActiveTab }) {
 
   return (
     <div>
-      {/* Top action bar for history/stats */}
       {(activeTab === "history" || activeTab === "dashboard") && (
         <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16, gap:8 }}>
           <button onClick={exportCSV} style={{ background:"#ff7832", color:"#0a0a0f", border:"none", borderRadius:8, padding:"8px 16px", fontSize:12, fontFamily:"monospace", letterSpacing:"0.08em", textTransform:"uppercase", fontWeight:700 }}>⬇ Export CSV</button>
         </div>
       )}
 
-      {/* ── LOG ── */}
       {activeTab === "log" && (
         <div className="fade-up">
-          {/* Step indicator */}
           <div style={{ display:"flex", alignItems:"center", marginBottom:28 }}>
             {[1,2,3,4,5,6,7].map((n,i) => (
               <div key={n} style={{ display:"flex", alignItems:"center" }}>
@@ -510,7 +506,6 @@ function CallTracker({ activeTab, setActiveTab }) {
         </div>
       )}
 
-      {/* ── DASHBOARD ── */}
       {activeTab === "dashboard" && (
         <div className="fade-up">
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:24 }}>
@@ -543,7 +538,6 @@ function CallTracker({ activeTab, setActiveTab }) {
         </div>
       )}
 
-      {/* ── HISTORY ── */}
       {activeTab === "history" && (
         <div className="fade-up">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -624,11 +618,10 @@ function ProspectScanner() {
   const [bulkInput, setBulkInput] = useState("");
   const [brandInput, setBrandInput] = useState("");
   const [locationLimit, setLocationLimit] = useState(50);
-  const [inputMode, setInputMode] = useState("auto"); // auto | single | bulk
+  const [inputMode, setInputMode] = useState("auto");
   const [scanning, setScanning] = useState(false);
   const [scanningUrl, setScanningUrl] = useState("");
   const [findingUrls, setFindingUrls] = useState(false);
-  const [queuedUrls, setQueuedUrls] = useState([]);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, skipped: 0 });
   const [filterProvider, setFilterProvider] = useState("all");
   const [toast, setToast] = useState(null);
@@ -636,7 +629,6 @@ function ProspectScanner() {
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(null), 2400); };
 
-  // Returns true if added as prospect, false if skipped (Workstream/dupe)
   const scanUrl = async (url, silent = false) => {
     const trimmed = url.trim();
     if (!trimmed) return false;
@@ -654,7 +646,6 @@ function ProspectScanner() {
       if (!response.ok) throw new Error("API error");
       const parsed = await response.json();
 
-      // Skip Workstream customers silently
       if (parsed.provider === "Workstream") {
         if (!silent) showToast("✅ Already a Workstream customer — skipped");
         return false;
@@ -668,7 +659,10 @@ function ProspectScanner() {
         entity: parsed.entity || null,
         city: parsed.city || null,
         state: parsed.state || null,
-        locations: parsed.locations || null,
+        store_id: parsed.store_id || null,
+        open_jobs: parsed.open_jobs || null,
+        apply_url: parsed.apply_url || null,
+        talent_page: parsed.talent_page || null,
         confidence: parsed.confidence || "Low",
         notes: parsed.notes || "",
       };
@@ -740,13 +734,13 @@ function ProspectScanner() {
   const deleteProspect = id => setProspects(prev => prev.filter(p => p.id !== id));
 
   const exportCSV = () => {
-    // Only export non-Workstream prospects
     const exportable = prospects.filter(p => p.provider !== "Workstream");
     if (!exportable.length) { showToast("No prospects to export yet!"); return; }
-    const headers = ["Date","URL","Provider","Entity","City","State","Locations","Confidence","Notes"];
+    const headers = ["Date","URL","Provider","Entity","City","State","Store ID","Open Jobs","Apply URL","Talent Page","Confidence","Notes"];
     const rows = exportable.map(p => [
       formatDate(p.ts), p.url, p.provider, p.entity||"—", p.city||"—", p.state||"—",
-      p.locations||"—", p.confidence, p.notes
+      p.store_id||"—", p.open_jobs||"—", p.apply_url||"—", p.talent_page||"—",
+      p.confidence, p.notes
     ]);
     const csv = [headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob([csv],{type:"text/csv"});
@@ -792,7 +786,7 @@ function ProspectScanner() {
         ))}
       </div>
 
-      {/* Auto-find by brand */}
+      {/* Auto-find */}
       {inputMode === "auto" && (
         <div style={{ marginBottom:24 }}>
           <div style={{ padding:"14px 18px", background:"rgba(255,120,50,0.05)", border:"1px solid rgba(255,120,50,0.15)", borderRadius:8, marginBottom:14 }}>
@@ -830,7 +824,7 @@ function ProspectScanner() {
         </div>
       )}
 
-      {/* Single URL input */}
+      {/* Single URL */}
       {inputMode === "single" && (
         <div style={{ display:"flex", gap:10, marginBottom:24 }}>
           <input
@@ -848,7 +842,7 @@ function ProspectScanner() {
         </div>
       )}
 
-      {/* Bulk URL input */}
+      {/* Bulk URLs */}
       {inputMode === "bulk" && (
         <div style={{ marginBottom:24 }}>
           <textarea value={bulkInput} onChange={e => setBulkInput(e.target.value)}
@@ -865,7 +859,7 @@ function ProspectScanner() {
         </div>
       )}
 
-      {/* Progress indicator */}
+      {/* Progress */}
       {(scanning || findingUrls) && (
         <div style={{ marginBottom:16, padding:"14px 18px", background:"rgba(255,120,50,0.05)", border:"1px solid rgba(255,120,50,0.15)", borderRadius:8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: scanProgress.total > 0 ? 10 : 0 }}>
@@ -918,13 +912,14 @@ function ProspectScanner() {
         </div>
       )}
 
-      {/* Results */}
+      {/* Empty state */}
       {prospects.length === 0 && !scanning && (
         <div style={{ textAlign:"center", color:"#4a4030", fontSize:13, padding:"48px 0", fontFamily:"monospace", lineHeight:2 }}>
           No URLs scanned yet.<br/>Paste a franchise careers page URL above to get started.
         </div>
       )}
 
+      {/* Results */}
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
         {filtered.map(p => {
           const pc = getProviderColor(p.provider);
@@ -933,25 +928,46 @@ function ProspectScanner() {
             <div key={p.id} className="history-row" style={{ background:"rgba(255,255,255,0.02)", border:`1px solid ${isProspect?"rgba(255,120,50,0.2)":p.provider==="Workstream"?"rgba(76,175,80,0.2)":"#2a2520"}`, borderRadius:10, padding:"16px 18px", transition:"background 0.12s" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, marginBottom:8 }}>
                 <div style={{ flex:1, minWidth:0 }}>
+
+                  {/* Row 1: Provider badge + confidence + date */}
                   <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", marginBottom:6 }}>
-                    {/* Provider badge */}
                     <span style={{ background:pc.bg, color:pc.text, border:`1px solid ${pc.border}`, borderRadius:99, padding:"2px 10px", fontSize:11, fontFamily:"monospace", fontWeight:700 }}>
                       {p.provider === "Workstream" ? "✅ Workstream" : isProspect ? `🎯 ${p.provider}` : `⚠️ ${p.provider}`}
                     </span>
-                    {/* Confidence */}
                     <span style={{ fontSize:10, color:p.confidence==="High"?"#4caf50":p.confidence==="Medium"?"#ff7832":"#7a7060", fontFamily:"monospace", letterSpacing:"0.06em" }}>
                       {p.confidence} confidence
                     </span>
                     <span style={{ fontSize:10, color:"#4a4030", fontFamily:"monospace" }}>{formatDate(p.ts)}</span>
                   </div>
-                  {/* Entity + location */}
-                  <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:4 }}>
+
+                  {/* Row 2: Entity + location + store ID + open jobs */}
+                  <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:4, alignItems:"center" }}>
                     {p.entity && <span style={{ fontSize:13, color:"#f5ede0", fontWeight:400 }}>{p.entity}</span>}
                     {(p.city || p.state) && <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>📍 {[p.city,p.state].filter(Boolean).join(", ")}</span>}
-                    {p.locations && <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>🏪 ~{p.locations} locations</span>}
+                    {p.store_id && <span style={{ fontSize:11, color:"#7a7060", fontFamily:"monospace" }}>🏪 #{p.store_id}</span>}
+                    {p.open_jobs != null && <span style={{ fontSize:11, color:"#ff7832", fontFamily:"monospace" }}>💼 {p.open_jobs} open job{p.open_jobs !== 1 ? "s" : ""}</span>}
                   </div>
-                  {/* URL */}
-                  <div style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", wordBreak:"break-all", marginBottom: p.notes ? 4 : 0 }}>{p.url}</div>
+
+                  {/* Row 3: Source URL */}
+                  <div style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", wordBreak:"break-all", marginBottom:4 }}>{p.url}</div>
+
+                  {/* Row 4: Apply URL + Talent Page links */}
+                  {(p.apply_url || p.talent_page) && (
+                    <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:4 }}>
+                      {p.apply_url && (
+                        <a href={p.apply_url} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:"#ff7832", fontFamily:"monospace", textDecoration:"none" }}>
+                          🔗 Apply URL ↗
+                        </a>
+                      )}
+                      {p.talent_page && (
+                        <a href={p.talent_page} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:"#7eb3ff", fontFamily:"monospace", textDecoration:"none" }}>
+                          🏢 Talent Portal ↗
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Row 5: Notes */}
                   {p.notes && <div style={{ fontSize:12, color:"#7a7060", fontStyle:"italic", lineHeight:1.5 }}>{p.notes}</div>}
                 </div>
                 <button className="del-btn" onClick={() => deleteProspect(p.id)} style={{ background:"none", border:"none", color:"#2a2520", fontSize:18, padding:"2px 4px", flexShrink:0 }}>×</button>
