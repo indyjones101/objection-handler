@@ -34,10 +34,10 @@ Do multiple web searches to find individual franchise location career pages.
 Search for things like:
 - "${brand} franchise careers apply jobs -workstream"
 - "${brand}" franchise "apply now" jobs -site:workstream.us
-- "${brand}" franchisee hiring "equal opportunity employer"
 - "${brand}" site:talentreef.com OR site:icims.com OR site:bamboohr.com OR site:adp.com
+- "${brand}" franchisee hiring "equal opportunity employer"
 
-IMPORTANT: Do NOT return any URLs containing "workstream.us" — those are existing customers and must be excluded. All other ATS providers (TalentReef, iCIMS, ADP, BambooHR, Paradox, UKG, Paycom, etc.) are fine and desirable.
+IMPORTANT: Do NOT return any URLs containing "workstream.us" — those are existing customers. All other ATS providers (TalentReef, iCIMS, ADP, BambooHR, Paradox, UKG, Paycom, etc.) are great — include those.
 
 I need individual location career URLs — NOT the corporate careers page.
 Individual franchise pages often look like:
@@ -77,7 +77,6 @@ Find up to ${maxUrls} unique franchise location URLs. Stop once you have ${maxUr
       parsed = { urls: [], total_found: 0, notes: "Could not find URLs for this brand." };
     }
 
-    // Dedupe, validate, and filter out workstream.us URLs only
     const validUrls = [...new Set(parsed.urls || [])]
       .filter((u) => {
         try { new URL(u); return true; } catch { return false; }
