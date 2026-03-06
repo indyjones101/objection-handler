@@ -6,10 +6,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { brand } = req.body;
+  const { brand, limit = 50 } = req.body;
   if (!brand || typeof brand !== "string") {
     return res.status(400).json({ error: "Missing brand name" });
   }
+  const maxUrls = Math.min(Math.max(parseInt(limit) || 50, 5), 200);
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -26,9 +27,9 @@ export default async function handler(req, res) {
         messages: [
           {
             role: "user",
-            content: `Find franchise location career/jobs page URLs for "${brand}".
+            content: `Find up to ${maxUrls} franchise location career/jobs page URLs for "${brand}".
 
-Do multiple web searches to find as many individual franchise location career pages as possible. 
+Do multiple web searches to find individual franchise location career pages. 
 Search for things like:
 - "${brand} franchise careers apply jobs"
 - "${brand}" site:workstream.us
@@ -49,7 +50,7 @@ Return ONLY a valid JSON object, no markdown, no explanation:
   "notes": "brief note about what sources were found"
 }
 
-Try to find at least 10-20 unique franchise location URLs. Exclude corporate HQ pages, LinkedIn, Indeed.`,
+Find up to ${maxUrls} unique franchise location URLs. Stop once you have ${maxUrls}. Exclude corporate HQ pages, LinkedIn, Indeed.`,
           },
         ],
       }),
@@ -77,8 +78,8 @@ Try to find at least 10-20 unique franchise location URLs. Exclude corporate HQ 
       .filter(u => {
         try { new URL(u); return true; } catch { return false; }
       })
-      // Filter out LinkedIn, Indeed, corporate pages
-      .filter(u => !u.includes("linkedin.com") && !u.includes("indeed.com"));
+      .filter(u => !u.includes("linkedin.com") && !u.includes("indeed.com"))
+      .slice(0, maxUrls);
 
     return res.status(200).json({
       urls: validUrls,
