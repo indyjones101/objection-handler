@@ -10,6 +10,7 @@ export default async function handler(req, res) {
   if (!brand || typeof brand !== "string") {
     return res.status(400).json({ error: "Missing brand name" });
   }
+
   const maxUrls = Math.min(Math.max(parseInt(limit) || 50, 5), 200);
 
   try {
@@ -29,19 +30,21 @@ export default async function handler(req, res) {
             role: "user",
             content: `Find up to ${maxUrls} franchise location career/jobs page URLs for "${brand}".
 
-Do multiple web searches to find individual franchise location career pages. 
+Do multiple web searches to find individual franchise location career pages.
 Search for things like:
-- "${brand} franchise careers apply jobs"
-- "${brand}" site:workstream.us
-- "${brand}" site:talentreef.com  
-- "${brand}" site:icims.com
-- "${brand}" franchise "apply now" jobs
+- "${brand} franchise careers apply jobs -workstream"
+- "${brand}" franchise "apply now" jobs -site:workstream.us
+- "${brand}" franchisee hiring "equal opportunity employer"
+- "${brand}" site:talentreef.com OR site:icims.com OR site:bamboohr.com OR site:adp.com
+
+IMPORTANT: Do NOT return any URLs containing "workstream.us" — those are existing customers and must be excluded. All other ATS providers (TalentReef, iCIMS, ADP, BambooHR, Paradox, UKG, Paycom, etc.) are fine and desirable.
 
 I need individual location career URLs — NOT the corporate careers page.
 Individual franchise pages often look like:
-- https://workstream.us/j/abc123/brand-name/city-location/...
 - https://brand.talentreef.com/...
 - https://jobs.icims.com/jobs/brand/...
+- https://brand.bamboohr.com/careers/...
+- https://recruiting.adp.com/srccar/brand/...
 
 Return ONLY a valid JSON object, no markdown, no explanation:
 {
@@ -50,7 +53,7 @@ Return ONLY a valid JSON object, no markdown, no explanation:
   "notes": "brief note about what sources were found"
 }
 
-Find up to ${maxUrls} unique franchise location URLs. Stop once you have ${maxUrls}. Exclude corporate HQ pages, LinkedIn, Indeed.`,
+Find up to ${maxUrls} unique franchise location URLs. Stop once you have ${maxUrls}. Exclude corporate HQ pages, LinkedIn, Indeed, and workstream.us.`,
           },
         ],
       }),
@@ -58,6 +61,7 @@ Find up to ${maxUrls} unique franchise location URLs. Stop once you have ${maxUr
 
     if (!response.ok) {
       const errText = await response.text();
+      console.error("Anthropic API error:", errText);
       return res.status(502).json({ error: "Upstream API error", detail: errText });
     }
 
@@ -73,12 +77,16 @@ Find up to ${maxUrls} unique franchise location URLs. Stop once you have ${maxUr
       parsed = { urls: [], total_found: 0, notes: "Could not find URLs for this brand." };
     }
 
-    // Dedupe and validate URLs
+    // Dedupe, validate, and filter out workstream.us URLs only
     const validUrls = [...new Set(parsed.urls || [])]
-      .filter(u => {
+      .filter((u) => {
         try { new URL(u); return true; } catch { return false; }
       })
-      .filter(u => !u.includes("linkedin.com") && !u.includes("indeed.com"))
+      .filter((u) =>
+        !u.includes("linkedin.com") &&
+        !u.includes("indeed.com") &&
+        !u.includes("workstream.us")
+      )
       .slice(0, maxUrls);
 
     return res.status(200).json({
