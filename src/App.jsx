@@ -623,6 +623,7 @@ function ProspectScanner() {
   const [urlInput, setUrlInput] = useState("");
   const [bulkInput, setBulkInput] = useState("");
   const [brandInput, setBrandInput] = useState("");
+  const [locationLimit, setLocationLimit] = useState(50);
   const [inputMode, setInputMode] = useState("auto"); // auto | single | bulk
   const [scanning, setScanning] = useState(false);
   const [scanningUrl, setScanningUrl] = useState("");
@@ -708,7 +709,7 @@ function ProspectScanner() {
       const res = await fetch("/api/find-locations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brand: brandInput.trim() }),
+        body: JSON.stringify({ brand: brandInput.trim(), limit: locationLimit }),
       });
       if (!res.ok) throw new Error("API error");
       const data = await res.json();
@@ -800,7 +801,7 @@ function ProspectScanner() {
               Type a brand name → Claude searches the web for franchise career URLs → scans each one → <strong style={{color:"#f5ede0"}}>Workstream locations are automatically skipped</strong> → only prospects show up in your list and CSV.
             </p>
           </div>
-          <div style={{ display:"flex", gap:10 }}>
+          <div style={{ display:"flex", gap:10, marginBottom:10 }}>
             <input
               value={brandInput} onChange={e => setBrandInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && autoFind()}
@@ -813,6 +814,18 @@ function ProspectScanner() {
               border:"none", borderRadius:8, padding:"0 20px", fontSize:12,
               fontFamily:"monospace", fontWeight:700, letterSpacing:"0.08em", whiteSpace:"nowrap",
             }}>{findingUrls ? "Finding..." : scanning ? "Scanning..." : "Auto-Find →"}</button>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", letterSpacing:"0.06em" }}>LOCATION LIMIT:</span>
+            {[10, 25, 50, 100, 200].map(n => (
+              <button key={n} onClick={() => setLocationLimit(n)} style={{
+                padding:"4px 12px", borderRadius:99, border:`1px solid ${locationLimit===n?"#ff7832":"#2a2520"}`,
+                background: locationLimit===n ? "rgba(255,120,50,0.15)" : "transparent",
+                color: locationLimit===n ? "#ff7832" : "#7a7060",
+                fontSize:11, fontFamily:"monospace", fontWeight: locationLimit===n ? 700 : 400,
+              }}>{n}</button>
+            ))}
+            <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace" }}>≈ ${(locationLimit * 0.006).toFixed(2)} est.</span>
           </div>
         </div>
       )}
