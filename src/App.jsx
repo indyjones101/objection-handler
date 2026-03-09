@@ -201,6 +201,7 @@ function ObjectionHandler() {
     <div style={{ animation:"fadeIn 0.3s ease" }}>
       <p style={{ color:"#7a7060", fontSize:"15px", marginBottom:"28px", lineHeight:"1.6" }}>Drop an objection. Get 3 battle-tested rebuttals instantly.</p>
 
+      {/* Mode Toggle */}
       <div style={{ display:"flex", marginBottom:"24px", border:"1px solid #2a2520", borderRadius:"6px", overflow:"hidden", width:"fit-content" }}>
         {["quick","custom"].map(mode => (
           <button key={mode} onClick={() => setInputMode(mode)} style={{
@@ -410,14 +411,17 @@ function CallTracker({ activeTab, setActiveTab }) {
 
   return (
     <div>
+      {/* Top action bar for history/stats */}
       {(activeTab === "history" || activeTab === "dashboard") && (
         <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16, gap:8 }}>
           <button onClick={exportCSV} style={{ background:"#ff7832", color:"#0a0a0f", border:"none", borderRadius:8, padding:"8px 16px", fontSize:12, fontFamily:"monospace", letterSpacing:"0.08em", textTransform:"uppercase", fontWeight:700 }}>⬇ Export CSV</button>
         </div>
       )}
 
+      {/* ── LOG ── */}
       {activeTab === "log" && (
         <div className="fade-up">
+          {/* Step indicator */}
           <div style={{ display:"flex", alignItems:"center", marginBottom:28 }}>
             {[1,2,3,4,5,6,7].map((n,i) => (
               <div key={n} style={{ display:"flex", alignItems:"center" }}>
@@ -506,6 +510,7 @@ function CallTracker({ activeTab, setActiveTab }) {
         </div>
       )}
 
+      {/* ── DASHBOARD ── */}
       {activeTab === "dashboard" && (
         <div className="fade-up">
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:24 }}>
@@ -538,6 +543,7 @@ function CallTracker({ activeTab, setActiveTab }) {
         </div>
       )}
 
+      {/* ── HISTORY ── */}
       {activeTab === "history" && (
         <div className="fade-up">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -617,11 +623,13 @@ function ProspectScanner() {
   const [urlInput, setUrlInput] = useState("");
   const [bulkInput, setBulkInput] = useState("");
   const [brandInput, setBrandInput] = useState("");
+  const [selectedStates, setSelectedStates] = useState([]);
   const [locationLimit, setLocationLimit] = useState(50);
-  const [inputMode, setInputMode] = useState("auto");
+  const [inputMode, setInputMode] = useState("auto"); // auto | single | bulk
   const [scanning, setScanning] = useState(false);
   const [scanningUrl, setScanningUrl] = useState("");
   const [findingUrls, setFindingUrls] = useState(false);
+  const [queuedUrls, setQueuedUrls] = useState([]);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, skipped: 0 });
   const [filterProvider, setFilterProvider] = useState("all");
   const [toast, setToast] = useState(null);
@@ -629,6 +637,7 @@ function ProspectScanner() {
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(null), 2400); };
 
+  // Returns true if added as prospect, false if skipped (Workstream/dupe)
   const scanUrl = async (url, silent = false) => {
     const trimmed = url.trim();
     if (!trimmed) return false;
@@ -646,6 +655,7 @@ function ProspectScanner() {
       if (!response.ok) throw new Error("API error");
       const parsed = await response.json();
 
+      // Skip Workstream customers silently
       if (parsed.provider === "Workstream") {
         if (!silent) showToast("✅ Already a Workstream customer — skipped");
         return false;
@@ -659,10 +669,7 @@ function ProspectScanner() {
         entity: parsed.entity || null,
         city: parsed.city || null,
         state: parsed.state || null,
-        store_id: parsed.store_id || null,
-        open_jobs: parsed.open_jobs || null,
-        apply_url: parsed.apply_url || null,
-        talent_page: parsed.talent_page || null,
+        locations: parsed.locations || null,
         confidence: parsed.confidence || "Low",
         notes: parsed.notes || "",
       };
@@ -695,15 +702,21 @@ function ProspectScanner() {
     showToast(`Done! ${urls.length - skipped} prospects found, ${skipped} Workstream/dupes skipped.`);
   };
 
+  const toggleState = (st) => {
+    setSelectedStates(prev =>
+      prev.includes(st) ? prev.filter(s => s !== st) : [...prev, st]
+    );
+  };
+
   const autoFind = async () => {
-    if (!brandInput.trim()) return;
+    if (!brandInput.trim() || selectedStates.length === 0) return;
     setFindingUrls(true);
-    showToast(`Searching for ${brandInput} franchise locations...`);
+    showToast(`Searching for ${brandInput} in ${selectedStates.join(", ")}...`);
     try {
       const res = await fetch("/api/find-locations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brand: brandInput.trim(), limit: locationLimit }),
+        body: JSON.stringify({ brand: brandInput.trim(), limit: locationLimit, states: selectedStates }),
       });
       if (!res.ok) throw new Error("API error");
       const data = await res.json();
@@ -734,13 +747,13 @@ function ProspectScanner() {
   const deleteProspect = id => setProspects(prev => prev.filter(p => p.id !== id));
 
   const exportCSV = () => {
+    // Only export non-Workstream prospects
     const exportable = prospects.filter(p => p.provider !== "Workstream");
     if (!exportable.length) { showToast("No prospects to export yet!"); return; }
-    const headers = ["Date","URL","Provider","Entity","City","State","Store ID","Open Jobs","Apply URL","Talent Page","Confidence","Notes"];
+    const headers = ["Date","URL","Provider","Entity","City","State","Locations","Confidence","Notes"];
     const rows = exportable.map(p => [
       formatDate(p.ts), p.url, p.provider, p.entity||"—", p.city||"—", p.state||"—",
-      p.store_id||"—", p.open_jobs||"—", p.apply_url||"—", p.talent_page||"—",
-      p.confidence, p.notes
+      p.locations||"—", p.confidence, p.notes
     ]);
     const csv = [headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob([csv],{type:"text/csv"});
@@ -786,31 +799,61 @@ function ProspectScanner() {
         ))}
       </div>
 
-      {/* Auto-find */}
+      {/* Auto-find by brand */}
       {inputMode === "auto" && (
         <div style={{ marginBottom:24 }}>
           <div style={{ padding:"14px 18px", background:"rgba(255,120,50,0.05)", border:"1px solid rgba(255,120,50,0.15)", borderRadius:8, marginBottom:14 }}>
             <div style={{ fontSize:11, color:"#ff7832", fontFamily:"monospace", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:6 }}>How it works</div>
             <p style={{ fontSize:12, color:"#7a7060", lineHeight:1.7, margin:0 }}>
-              Type a brand name → Claude searches the web for franchise career URLs → scans each one → <strong style={{color:"#f5ede0"}}>Workstream locations are automatically skipped</strong> → only prospects show up in your list and CSV.
+              Type a brand name + pick states → Claude searches for franchise career URLs in those states → scans each one → <strong style={{color:"#f5ede0"}}>Workstream locations are automatically skipped</strong> → only prospects show up in your list and CSV.
             </p>
           </div>
-          <div style={{ display:"flex", gap:10, marginBottom:10 }}>
+
+          {/* Brand input + button */}
+          <div style={{ display:"flex", gap:10, marginBottom:14 }}>
             <input
               value={brandInput} onChange={e => setBrandInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && autoFind()}
               placeholder="e.g. Smoothie King, Anytime Fitness, Popeyes..."
               style={{ flex:1, border:"1px solid #2a2520", borderRadius:8, padding:"12px 14px", fontSize:13, fontFamily:"monospace", background:"rgba(255,255,255,0.03)", color:"#e8e0d0" }}
             />
-            <button onClick={autoFind} disabled={scanning || findingUrls || !brandInput.trim()} style={{
-              background: scanning || findingUrls || !brandInput.trim() ? "#1a1a14" : "#ff7832",
-              color: scanning || findingUrls || !brandInput.trim() ? "#4a4030" : "#0a0a0f",
+            <button onClick={autoFind} disabled={scanning || findingUrls || !brandInput.trim() || selectedStates.length === 0} style={{
+              background: scanning || findingUrls || !brandInput.trim() || selectedStates.length === 0 ? "#1a1a14" : "#ff7832",
+              color: scanning || findingUrls || !brandInput.trim() || selectedStates.length === 0 ? "#4a4030" : "#0a0a0f",
               border:"none", borderRadius:8, padding:"0 20px", fontSize:12,
               fontFamily:"monospace", fontWeight:700, letterSpacing:"0.08em", whiteSpace:"nowrap",
             }}>{findingUrls ? "Finding..." : scanning ? "Scanning..." : "Auto-Find →"}</button>
           </div>
+
+          {/* State multi-select */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+              <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", letterSpacing:"0.06em", textTransform:"uppercase" }}>States</span>
+              {selectedStates.length === 0
+                ? <span style={{ fontSize:11, color:"#ff4f4f", fontFamily:"monospace" }}>— required, pick at least one</span>
+                : <span style={{ fontSize:11, color:"#ff7832", fontFamily:"monospace" }}>{selectedStates.length} selected: {selectedStates.join(", ")}</span>
+              }
+              {selectedStates.length > 0 && (
+                <button onClick={() => setSelectedStates([])} style={{ marginLeft:"auto", background:"none", border:"none", color:"#4a4030", fontSize:11, fontFamily:"monospace", cursor:"pointer" }}>✕ Clear</button>
+              )}
+            </div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+              {["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"].map(st => (
+                <button key={st} onClick={() => toggleState(st)} style={{
+                  padding:"4px 9px", borderRadius:6,
+                  border:`1px solid ${selectedStates.includes(st) ? "#ff7832" : "#2a2520"}`,
+                  background: selectedStates.includes(st) ? "rgba(255,120,50,0.2)" : "rgba(255,255,255,0.02)",
+                  color: selectedStates.includes(st) ? "#ff7832" : "#7a7060",
+                  fontSize:11, fontFamily:"monospace", fontWeight: selectedStates.includes(st) ? 700 : 400,
+                  cursor:"pointer", transition:"all 0.1s",
+                }}>{st}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Location limit */}
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", letterSpacing:"0.06em" }}>LOCATION LIMIT:</span>
+            <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", letterSpacing:"0.06em", textTransform:"uppercase" }}>Limit:</span>
             {[10, 25, 50, 100, 200].map(n => (
               <button key={n} onClick={() => setLocationLimit(n)} style={{
                 padding:"4px 12px", borderRadius:99, border:`1px solid ${locationLimit===n?"#ff7832":"#2a2520"}`,
@@ -824,7 +867,7 @@ function ProspectScanner() {
         </div>
       )}
 
-      {/* Single URL */}
+      {/* Single URL input */}
       {inputMode === "single" && (
         <div style={{ display:"flex", gap:10, marginBottom:24 }}>
           <input
@@ -842,7 +885,7 @@ function ProspectScanner() {
         </div>
       )}
 
-      {/* Bulk URLs */}
+      {/* Bulk URL input */}
       {inputMode === "bulk" && (
         <div style={{ marginBottom:24 }}>
           <textarea value={bulkInput} onChange={e => setBulkInput(e.target.value)}
@@ -859,7 +902,7 @@ function ProspectScanner() {
         </div>
       )}
 
-      {/* Progress */}
+      {/* Progress indicator */}
       {(scanning || findingUrls) && (
         <div style={{ marginBottom:16, padding:"14px 18px", background:"rgba(255,120,50,0.05)", border:"1px solid rgba(255,120,50,0.15)", borderRadius:8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: scanProgress.total > 0 ? 10 : 0 }}>
@@ -912,14 +955,13 @@ function ProspectScanner() {
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Results */}
       {prospects.length === 0 && !scanning && (
         <div style={{ textAlign:"center", color:"#4a4030", fontSize:13, padding:"48px 0", fontFamily:"monospace", lineHeight:2 }}>
           No URLs scanned yet.<br/>Paste a franchise careers page URL above to get started.
         </div>
       )}
 
-      {/* Results */}
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
         {filtered.map(p => {
           const pc = getProviderColor(p.provider);
@@ -928,46 +970,25 @@ function ProspectScanner() {
             <div key={p.id} className="history-row" style={{ background:"rgba(255,255,255,0.02)", border:`1px solid ${isProspect?"rgba(255,120,50,0.2)":p.provider==="Workstream"?"rgba(76,175,80,0.2)":"#2a2520"}`, borderRadius:10, padding:"16px 18px", transition:"background 0.12s" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, marginBottom:8 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-
-                  {/* Row 1: Provider badge + confidence + date */}
                   <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", marginBottom:6 }}>
+                    {/* Provider badge */}
                     <span style={{ background:pc.bg, color:pc.text, border:`1px solid ${pc.border}`, borderRadius:99, padding:"2px 10px", fontSize:11, fontFamily:"monospace", fontWeight:700 }}>
                       {p.provider === "Workstream" ? "✅ Workstream" : isProspect ? `🎯 ${p.provider}` : `⚠️ ${p.provider}`}
                     </span>
+                    {/* Confidence */}
                     <span style={{ fontSize:10, color:p.confidence==="High"?"#4caf50":p.confidence==="Medium"?"#ff7832":"#7a7060", fontFamily:"monospace", letterSpacing:"0.06em" }}>
                       {p.confidence} confidence
                     </span>
                     <span style={{ fontSize:10, color:"#4a4030", fontFamily:"monospace" }}>{formatDate(p.ts)}</span>
                   </div>
-
-                  {/* Row 2: Entity + location + store ID + open jobs */}
-                  <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:4, alignItems:"center" }}>
+                  {/* Entity + location */}
+                  <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:4 }}>
                     {p.entity && <span style={{ fontSize:13, color:"#f5ede0", fontWeight:400 }}>{p.entity}</span>}
                     {(p.city || p.state) && <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>📍 {[p.city,p.state].filter(Boolean).join(", ")}</span>}
-                    {p.store_id && <span style={{ fontSize:11, color:"#7a7060", fontFamily:"monospace" }}>🏪 #{p.store_id}</span>}
-                    {p.open_jobs != null && <span style={{ fontSize:11, color:"#ff7832", fontFamily:"monospace" }}>💼 {p.open_jobs} open job{p.open_jobs !== 1 ? "s" : ""}</span>}
+                    {p.locations && <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>🏪 ~{p.locations} locations</span>}
                   </div>
-
-                  {/* Row 3: Source URL */}
-                  <div style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", wordBreak:"break-all", marginBottom:4 }}>{p.url}</div>
-
-                  {/* Row 4: Apply URL + Talent Page links */}
-                  {(p.apply_url || p.talent_page) && (
-                    <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:4 }}>
-                      {p.apply_url && (
-                        <a href={p.apply_url} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:"#ff7832", fontFamily:"monospace", textDecoration:"none" }}>
-                          🔗 Apply URL ↗
-                        </a>
-                      )}
-                      {p.talent_page && (
-                        <a href={p.talent_page} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:"#7eb3ff", fontFamily:"monospace", textDecoration:"none" }}>
-                          🏢 Talent Portal ↗
-                        </a>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Row 5: Notes */}
+                  {/* URL */}
+                  <div style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", wordBreak:"break-all", marginBottom: p.notes ? 4 : 0 }}>{p.url}</div>
                   {p.notes && <div style={{ fontSize:12, color:"#7a7060", fontStyle:"italic", lineHeight:1.5 }}>{p.notes}</div>}
                 </div>
                 <button className="del-btn" onClick={() => deleteProspect(p.id)} style={{ background:"none", border:"none", color:"#2a2520", fontSize:18, padding:"2px 4px", flexShrink:0 }}>×</button>
