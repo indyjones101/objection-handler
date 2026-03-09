@@ -25,27 +25,45 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 2000,
+        max_tokens: 3000,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [
           {
             role: "user",
-            content: `Research the franchise brand "${brand}" and determine:
-1. What hiring/ATS platform do their franchise locations use to post jobs?
-2. How many franchise locations do they have in: ${stateList}?
+            content: `You are researching what job application / ATS platform the franchise brand "${brand}" uses.
 
-Do web searches like:
-- "${brand}" site:workstream.us
-- "${brand}" site:talentreef.com
-- "${brand}" site:icims.com
-- "${brand}" site:snagajob.com
-- "${brand}" site:jobvite.com
-- "${brand} franchise locations ${stateList}"
-- "${brand} franchise careers apply"
+STEP 1 - Search for their jobs/careers pages directly:
+Search: ${brand} jobs apply now
+Search: ${brand} franchise careers hiring
+Search: ${brand} site:workstream.us
+Search: ${brand} site:talentreef.com
+Search: ${brand} site:snagajob.com
+Search: ${brand} site:icims.com
 
-Known ATS platforms to detect: Workstream, TalentReef, iCIMS, Snagajob, Jobvite, Greenhouse, Lever, BambooHR, ADP, Paylocity, Paycom, Hirequest, JazzHR, Fountain, Harri, HotSchedules, ApplicantPro, PeopleMatter, or "Unknown".
+STEP 2 - Look at any URLs you find. The domain tells you the ATS:
+- workstream.us → Workstream
+- talentreef.com → TalentReef  
+- snagajob.com → Snagajob
+- icims.com → iCIMS
+- jobvite.com → Jobvite
+- greenhouse.io → Greenhouse
+- lever.co → Lever
+- bamboohr.com → BambooHR
+- paylocity.com → Paylocity
+- paycom.com → Paycom
+- jazzhr.com → JazzHR
+- fountain.com → Fountain
+- harri.com → Harri
+- applicantpro.com → ApplicantPro
+- peoplematter.com → PeopleMatter
+- myworkdayjobs.com → Workday
+- ultipro.com or ukg.com → UKG
 
-Return ONLY a valid JSON object, no markdown, no explanation:
+STEP 3 - Also estimate how many ${brand} franchise locations are in ${stateList}.
+Search: ${brand} franchise locations ${stateList}
+Search: ${brand} number of locations ${states[0]}
+
+After searching, return ONLY this JSON (no markdown, no extra text):
 {
   "brand": "${brand}",
   "ats": "TalentReef",
@@ -54,13 +72,17 @@ Return ONLY a valid JSON object, no markdown, no explanation:
   "location_count_in_states": 47,
   "total_locations_nationwide": 1200,
   "states_searched": "${stateList}",
-  "evidence_url": "https://example.talentreef.com/...",
-  "notes": "Found on TalentReef via search. ~47 TX locations based on franchise disclosure."
+  "evidence_url": "https://smoothieking.talentreef.com/...",
+  "notes": "Found active job postings on TalentReef. Approximately 47 TX locations per franchise directory."
 }
 
-ats_confidence should be "high" if you found an actual URL, "medium" if inferred, "low" if guessing.
-location_count_in_states: best estimate for locations in ${stateList} combined. Use -1 if unknown.
-is_workstream: true ONLY if the brand clearly uses Workstream as their ATS.`
+Rules:
+- ats_confidence: "high" = found actual URL, "medium" = strong inference, "low" = couldn't confirm
+- is_workstream: true ONLY if you found actual workstream.us URLs for this brand
+- location_count_in_states: integer estimate, or -1 if truly unknown
+- total_locations_nationwide: integer, or -1 if unknown
+- evidence_url: an actual URL you found, or null
+- Do NOT return the fallback "Could not determine" — always do your best with what you find`
           }
         ]
       })
@@ -77,8 +99,13 @@ is_workstream: true ONLY if the brand clearly uses Workstream as their ATS.`
 
     let parsed;
     try {
+      // Strip markdown fences and find the JSON object
       const clean = rawText.replace(/```json|```/g, "").trim();
-      parsed = JSON.parse(clean);
+      // Find first { to last } in case there's surrounding text
+      const start = clean.indexOf("{");
+      const end = clean.lastIndexOf("}");
+      const jsonStr = start !== -1 && end !== -1 ? clean.slice(start, end + 1) : clean;
+      parsed = JSON.parse(jsonStr);
     } catch {
       parsed = {
         brand,
@@ -89,9 +116,13 @@ is_workstream: true ONLY if the brand clearly uses Workstream as their ATS.`
         total_locations_nationwide: -1,
         states_searched: stateList,
         evidence_url: null,
-        notes: "Could not determine ATS for this brand.",
+        notes: "Search completed but ATS could not be confirmed. Try searching manually.",
       };
     }
+
+    // Sanitize all string fields to remove encoding artifacts
+    const sanitize = (v) => typeof v === "string" ? v.replace(/[^\x20-\x7E\n]/g, "").trim() : v;
+    Object.keys(parsed).forEach(k => { parsed[k] = sanitize(parsed[k]); });
 
     return res.status(200).json(parsed);
 
