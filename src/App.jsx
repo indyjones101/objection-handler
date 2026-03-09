@@ -711,36 +711,63 @@ function ProspectScanner() {
   const autoFind = async () => {
     if (!brandInput.trim() || selectedStates.length === 0) return;
     setFindingUrls(true);
-    showToast(`Searching for ${brandInput} in ${selectedStates.join(", ")}...`);
+    showToast(`Researching ${brandInput}...`);
     try {
       const res = await fetch("/api/find-locations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brand: brandInput.trim(), limit: locationLimit, states: selectedStates }),
+        body: JSON.stringify({ brand: brandInput.trim(), states: selectedStates }),
       });
       if (!res.ok) throw new Error("API error");
       const data = await res.json();
-      if (!data.urls || data.urls.length === 0) {
-        showToast("No URLs found — try a different brand name");
+
+      // Build a prospect entry from brand-level data
+      const isWorkstream = data.is_workstream === true;
+      const confidenceMap = { high: "High", medium: "Medium", low: "Low" };
+      const entry = {
+        id: Date.now() + Math.random(),
+        ts: Date.now(),
+        // brand-level fields
+        brand: data.brand || brandInput.trim(),
+        ats: data.ats || "Unknown",
+        provider: isWorkstream ? "Workstream" : (data.ats || "Unknown"),
+        confidence: confidenceMap[data.ats_confidence] || "Low",
+        locations: data.location_count_in_states > 0 ? data.location_count_in_states : null,
+        total_locations: data.total_locations_nationwide > 0 ? data.total_locations_nationwide : null,
+        states_searched: data.states_searched || selectedStates.join(", "),
+        evidence_url: data.evidence_url || null,
+        notes: data.notes || "",
+        // legacy fields for card rendering compatibility
+        url: data.evidence_url || `brand:${data.brand || brandInput.trim()}`,
+        entity: data.brand || brandInput.trim(),
+        city: null,
+        state: selectedStates.length === 1 ? selectedStates[0] : null,
+        scan_type: "brand",
+      };
+
+      // Skip if already have this brand + same states
+      const alreadyExists = prospects.some(p =>
+        p.brand && p.brand.toLowerCase() === entry.brand.toLowerCase() &&
+        p.states_searched === entry.states_searched
+      );
+      if (alreadyExists) {
+        showToast(`${entry.brand} already scanned for these states`);
         setFindingUrls(false);
         return;
       }
-      setFindingUrls(false);
-      setScanning(true);
-      setScanProgress({ current: 0, total: data.urls.length, skipped: 0 });
-      let skipped = 0;
-      for (let i = 0; i < data.urls.length; i++) {
-        const added = await scanUrl(data.urls[i], true);
-        if (!added) skipped++;
-        setScanProgress({ current: i + 1, total: data.urls.length, skipped });
-        await new Promise(r => setTimeout(r, 800));
+
+      setProspects(prev => [entry, ...prev]);
+
+      if (isWorkstream) {
+        showToast(`${entry.brand} is already a Workstream customer ✅`);
+      } else {
+        showToast(`${entry.brand} uses ${entry.ats} — potential prospect! 🎯`);
       }
-      setScanning(false);
-      showToast(`Done! ${data.urls.length - skipped} prospects found, ${skipped} Workstream/dupes skipped.`);
+      setBrandInput("");
     } catch (e) {
       showToast("Search failed — try again");
+    } finally {
       setFindingUrls(false);
-      setScanning(false);
     }
   };
 
@@ -817,12 +844,12 @@ function ProspectScanner() {
               placeholder="e.g. Smoothie King, Anytime Fitness, Popeyes..."
               style={{ flex:1, border:"1px solid #2a2520", borderRadius:8, padding:"12px 14px", fontSize:13, fontFamily:"monospace", background:"rgba(255,255,255,0.03)", color:"#e8e0d0" }}
             />
-            <button onClick={autoFind} disabled={scanning || findingUrls || !brandInput.trim() || selectedStates.length === 0} style={{
-              background: scanning || findingUrls || !brandInput.trim() || selectedStates.length === 0 ? "#1a1a14" : "#ff7832",
-              color: scanning || findingUrls || !brandInput.trim() || selectedStates.length === 0 ? "#4a4030" : "#0a0a0f",
+            <button onClick={autoFind} disabled={findingUrls || !brandInput.trim() || selectedStates.length === 0} style={{
+              background: findingUrls || !brandInput.trim() || selectedStates.length === 0 ? "#1a1a14" : "#ff7832",
+              color: findingUrls || !brandInput.trim() || selectedStates.length === 0 ? "#4a4030" : "#0a0a0f",
               border:"none", borderRadius:8, padding:"0 20px", fontSize:12,
               fontFamily:"monospace", fontWeight:700, letterSpacing:"0.08em", whiteSpace:"nowrap",
-            }}>{findingUrls ? "Finding..." : scanning ? "Scanning..." : "Auto-Find →"}</button>
+            }}>{findingUrls ? "Researching..." : "Check ATS →"}</button>
           </div>
 
           {/* State multi-select */}
@@ -851,19 +878,6 @@ function ProspectScanner() {
             </div>
           </div>
 
-          {/* Location limit */}
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", letterSpacing:"0.06em", textTransform:"uppercase" }}>Limit:</span>
-            {[10, 25, 50, 100, 200].map(n => (
-              <button key={n} onClick={() => setLocationLimit(n)} style={{
-                padding:"4px 12px", borderRadius:99, border:`1px solid ${locationLimit===n?"#ff7832":"#2a2520"}`,
-                background: locationLimit===n ? "rgba(255,120,50,0.15)" : "transparent",
-                color: locationLimit===n ? "#ff7832" : "#7a7060",
-                fontSize:11, fontFamily:"monospace", fontWeight: locationLimit===n ? 700 : 400,
-              }}>{n}</button>
-            ))}
-            <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace" }}>≈ ${(locationLimit * 0.006).toFixed(2)} est.</span>
-          </div>
         </div>
       )}
 
@@ -966,6 +980,7 @@ function ProspectScanner() {
         {filtered.map(p => {
           const pc = getProviderColor(p.provider);
           const isProspect = p.provider !== "Workstream" && p.provider !== "Unknown";
+          const isBrandScan = p.scan_type === "brand";
           return (
             <div key={p.id} className="history-row" style={{ background:"rgba(255,255,255,0.02)", border:`1px solid ${isProspect?"rgba(255,120,50,0.2)":p.provider==="Workstream"?"rgba(76,175,80,0.2)":"#2a2520"}`, borderRadius:10, padding:"16px 18px", transition:"background 0.12s" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, marginBottom:8 }}>
@@ -979,17 +994,36 @@ function ProspectScanner() {
                     <span style={{ fontSize:10, color:p.confidence==="High"?"#4caf50":p.confidence==="Medium"?"#ff7832":"#7a7060", fontFamily:"monospace", letterSpacing:"0.06em" }}>
                       {p.confidence} confidence
                     </span>
+                    {isBrandScan && <span style={{ fontSize:10, color:"#4a4030", fontFamily:"monospace", background:"rgba(255,255,255,0.04)", border:"1px solid #2a2520", borderRadius:99, padding:"1px 7px" }}>brand scan</span>}
                     <span style={{ fontSize:10, color:"#4a4030", fontFamily:"monospace" }}>{formatDate(p.ts)}</span>
                   </div>
-                  {/* Entity + location */}
-                  <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:4 }}>
-                    {p.entity && <span style={{ fontSize:13, color:"#f5ede0", fontWeight:400 }}>{p.entity}</span>}
-                    {(p.city || p.state) && <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>📍 {[p.city,p.state].filter(Boolean).join(", ")}</span>}
-                    {p.locations && <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>🏪 ~{p.locations} locations</span>}
+
+                  {/* Brand name + location counts */}
+                  <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:4, alignItems:"baseline" }}>
+                    <span style={{ fontSize:15, color:"#f5ede0", fontWeight:600 }}>{p.brand || p.entity}</span>
+                    {p.states_searched && (
+                      <span style={{ fontSize:12, color:"#7a7060", fontFamily:"monospace" }}>📍 {p.states_searched}</span>
+                    )}
+                    {p.locations && (
+                      <span style={{ fontSize:12, color: isProspect ? "#ff9a5c" : "#7a7060", fontFamily:"monospace", fontWeight: isProspect ? 700 : 400 }}>
+                        🏪 ~{p.locations} locations in state{selectedStates.length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                    {p.total_locations && (
+                      <span style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace" }}>({p.total_locations} nationwide)</span>
+                    )}
                   </div>
-                  {/* URL */}
-                  <div style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", wordBreak:"break-all", marginBottom: p.notes ? 4 : 0 }}>{p.url}</div>
-                  {p.notes && <div style={{ fontSize:12, color:"#7a7060", fontStyle:"italic", lineHeight:1.5 }}>{p.notes}</div>}
+
+                  {/* Evidence URL */}
+                  {p.evidence_url && p.evidence_url !== `brand:${p.brand}` && (
+                    <div style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", wordBreak:"break-all", marginBottom: p.notes ? 4 : 0 }}>
+                      <a href={p.evidence_url} target="_blank" rel="noopener noreferrer" style={{ color:"#4a4030", textDecoration:"none" }}>🔗 {p.evidence_url}</a>
+                    </div>
+                  )}
+                  {!isBrandScan && p.url && (
+                    <div style={{ fontSize:11, color:"#4a4030", fontFamily:"monospace", wordBreak:"break-all", marginBottom: p.notes ? 4 : 0 }}>{p.url}</div>
+                  )}
+                  {p.notes && <div style={{ fontSize:12, color:"#7a7060", fontStyle:"italic", lineHeight:1.5, marginTop:4 }}>{p.notes}</div>}
                 </div>
                 <button className="del-btn" onClick={() => deleteProspect(p.id)} style={{ background:"none", border:"none", color:"#2a2520", fontSize:18, padding:"2px 4px", flexShrink:0 }}>×</button>
               </div>
