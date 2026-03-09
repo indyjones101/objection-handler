@@ -1,19 +1,18 @@
 // api/find-locations.js
-// Given a brand name, finds franchise career page URLs to scan
+// Detects what ATS a franchise brand uses and estimates location count in target states
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { brand, limit = 50, states = [] } = req.body;
+  const { brand, states = [] } = req.body;
   if (!brand || typeof brand !== "string") {
     return res.status(400).json({ error: "Missing brand name" });
   }
   if (!Array.isArray(states) || states.length === 0) {
     return res.status(400).json({ error: "At least one state is required" });
   }
-  const maxUrls = Math.min(Math.max(parseInt(limit) || 50, 5), 200);
   const stateList = states.join(", ");
 
   try {
@@ -31,35 +30,40 @@ export default async function handler(req, res) {
         messages: [
           {
             role: "user",
-            content: `Find up to ${maxUrls} franchise location career/jobs page URLs for "${brand}" located in: ${stateList}.
+            content: `Research the franchise brand "${brand}" and determine:
+1. What hiring/ATS platform do their franchise locations use to post jobs?
+2. How many franchise locations do they have in: ${stateList}?
 
-IMPORTANT: Only return URLs for locations in these states: ${stateList}. Do not include locations from other states.
+Do web searches like:
+- "${brand}" site:workstream.us
+- "${brand}" site:talentreef.com
+- "${brand}" site:icims.com
+- "${brand}" site:snagajob.com
+- "${brand}" site:jobvite.com
+- "${brand} franchise locations ${stateList}"
+- "${brand} franchise careers apply"
 
-Do multiple web searches to find individual franchise location career pages.
-Search for things like:
-- "${brand} franchise careers ${stateList}"
-- "${brand}" site:workstream.us ${stateList}
-- "${brand}" site:talentreef.com ${stateList}
-- "${brand}" site:icims.com ${stateList}
-- "${brand}" franchise "apply now" jobs ${states[0]}
-
-I need individual location career URLs — NOT the corporate careers page.
-Individual franchise pages often look like:
-- https://workstream.us/j/abc123/brand-name/city-location/...
-- https://brand.talentreef.com/...
-- https://jobs.icims.com/jobs/brand/...
+Known ATS platforms to detect: Workstream, TalentReef, iCIMS, Snagajob, Jobvite, Greenhouse, Lever, BambooHR, ADP, Paylocity, Paycom, Hirequest, JazzHR, Fountain, Harri, HotSchedules, ApplicantPro, PeopleMatter, or "Unknown".
 
 Return ONLY a valid JSON object, no markdown, no explanation:
 {
-  "urls": ["url1", "url2", "url3", ...],
-  "total_found": 25,
-  "notes": "brief note about what sources were found"
+  "brand": "${brand}",
+  "ats": "TalentReef",
+  "ats_confidence": "high",
+  "is_workstream": false,
+  "location_count_in_states": 47,
+  "total_locations_nationwide": 1200,
+  "states_searched": "${stateList}",
+  "evidence_url": "https://example.talentreef.com/...",
+  "notes": "Found on TalentReef via search. ~47 TX locations based on franchise disclosure."
 }
 
-Find up to ${maxUrls} unique franchise location URLs in ${stateList}. Stop once you have ${maxUrls}. Exclude corporate HQ pages, LinkedIn, Indeed.`,
-          },
-        ],
-      }),
+ats_confidence should be "high" if you found an actual URL, "medium" if inferred, "low" if guessing.
+location_count_in_states: best estimate for locations in ${stateList} combined. Use -1 if unknown.
+is_workstream: true ONLY if the brand clearly uses Workstream as their ATS.`
+          }
+        ]
+      })
     });
 
     if (!response.ok) {
@@ -76,22 +80,20 @@ Find up to ${maxUrls} unique franchise location URLs in ${stateList}. Stop once 
       const clean = rawText.replace(/```json|```/g, "").trim();
       parsed = JSON.parse(clean);
     } catch {
-      parsed = { urls: [], total_found: 0, notes: "Could not find URLs for this brand." };
+      parsed = {
+        brand,
+        ats: "Unknown",
+        ats_confidence: "low",
+        is_workstream: false,
+        location_count_in_states: -1,
+        total_locations_nationwide: -1,
+        states_searched: stateList,
+        evidence_url: null,
+        notes: "Could not determine ATS for this brand.",
+      };
     }
 
-    // Dedupe and validate URLs
-    const validUrls = [...new Set(parsed.urls || [])]
-      .filter(u => {
-        try { new URL(u); return true; } catch { return false; }
-      })
-      .filter(u => !u.includes("linkedin.com") && !u.includes("indeed.com"))
-      .slice(0, maxUrls);
-
-    return res.status(200).json({
-      urls: validUrls,
-      total_found: validUrls.length,
-      notes: parsed.notes || "",
-    });
+    return res.status(200).json(parsed);
 
   } catch (err) {
     console.error("find-locations error:", err);
