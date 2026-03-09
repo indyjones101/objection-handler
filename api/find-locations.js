@@ -1,17 +1,20 @@
 // api/find-locations.js
-export const maxDuration = 60;
+// Given a brand name, finds franchise career page URLs to scan
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { brand, limit = 50 } = req.body;
+  const { brand, limit = 50, states = [] } = req.body;
   if (!brand || typeof brand !== "string") {
     return res.status(400).json({ error: "Missing brand name" });
   }
-
+  if (!Array.isArray(states) || states.length === 0) {
+    return res.status(400).json({ error: "At least one state is required" });
+  }
   const maxUrls = Math.min(Math.max(parseInt(limit) || 50, 5), 200);
+  const stateList = states.join(", ");
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -23,27 +26,37 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-                max_tokens: 500,
+        max_tokens: 2000,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [
           {
             role: "user",
-            content: `Search the web for franchise location career/jobs pages for "${brand}". 
+            content: `Find up to ${maxUrls} franchise location career/jobs page URLs for "${brand}" located in: ${stateList}.
 
-Search for: "${brand} franchise careers" and "${brand} franchise jobs apply"
+IMPORTANT: Only return URLs for locations in these states: ${stateList}. Do not include locations from other states.
 
-Find up to ${maxUrls} URLs that are individual franchise location hiring pages. These will typically be on ATS platforms like talentreef.com, icims.com, bamboohr.com, adp.com, paradox.ai, paycom.com, etc.
+Do multiple web searches to find individual franchise location career pages.
+Search for things like:
+- "${brand} franchise careers ${stateList}"
+- "${brand}" site:workstream.us ${stateList}
+- "${brand}" site:talentreef.com ${stateList}
+- "${brand}" site:icims.com ${stateList}
+- "${brand}" franchise "apply now" jobs ${states[0]}
 
-Do NOT include:
-- workstream.us URLs (those are existing customers)
-- linkedin.com or indeed.com
-- The brand's main corporate careers page
+I need individual location career URLs — NOT the corporate careers page.
+Individual franchise pages often look like:
+- https://workstream.us/j/abc123/brand-name/city-location/...
+- https://brand.talentreef.com/...
+- https://jobs.icims.com/jobs/brand/...
 
-After searching, respond with ONLY this JSON and nothing else:
+Return ONLY a valid JSON object, no markdown, no explanation:
 {
-  "urls": ["url1", "url2", "url3"],
-  "notes": "brief description of what you found"
-}`,
+  "urls": ["url1", "url2", "url3", ...],
+  "total_found": 25,
+  "notes": "brief note about what sources were found"
+}
+
+Find up to ${maxUrls} unique franchise location URLs in ${stateList}. Stop once you have ${maxUrls}. Exclude corporate HQ pages, LinkedIn, Indeed.`,
           },
         ],
       }),
@@ -63,20 +76,15 @@ After searching, respond with ONLY this JSON and nothing else:
       const clean = rawText.replace(/```json|```/g, "").trim();
       parsed = JSON.parse(clean);
     } catch {
-      // Try to extract URLs directly from the text if JSON parse fails
-      const urlMatches = rawText.match(/https?:\/\/[^\s"',\]]+/g) || [];
-      parsed = { urls: urlMatches, notes: "Extracted from text" };
+      parsed = { urls: [], total_found: 0, notes: "Could not find URLs for this brand." };
     }
 
+    // Dedupe and validate URLs
     const validUrls = [...new Set(parsed.urls || [])]
-      .filter((u) => {
+      .filter(u => {
         try { new URL(u); return true; } catch { return false; }
       })
-      .filter((u) =>
-        !u.includes("linkedin.com") &&
-        !u.includes("indeed.com") &&
-        !u.includes("workstream.us")
-      )
+      .filter(u => !u.includes("linkedin.com") && !u.includes("indeed.com"))
       .slice(0, maxUrls);
 
     return res.status(200).json({
