@@ -774,18 +774,28 @@ function ProspectScanner() {
   const deleteProspect = id => setProspects(prev => prev.filter(p => p.id !== id));
 
   const exportCSV = () => {
-    // Only export non-Workstream prospects
     const exportable = prospects.filter(p => p.provider !== "Workstream");
     if (!exportable.length) { showToast("No prospects to export yet!"); return; }
-    const headers = ["Date","URL","Provider","Entity","City","State","Locations","Confidence","Notes"];
+    // Sanitize a value: remove non-ASCII, strip quotes issues
+    const clean = v => String(v == null || v === -1 ? "" : v).replace(/[^\x20-\x7E]/g, "").trim();
+    const headers = ["Date","Brand","ATS Provider","States Searched","Locations in State","Total Nationwide","Confidence","Evidence URL","Notes"];
     const rows = exportable.map(p => [
-      formatDate(p.ts), p.url, p.provider, p.entity||"—", p.city||"—", p.state||"—",
-      p.locations||"—", p.confidence, p.notes
+      formatDate(p.ts),
+      clean(p.brand || p.entity),
+      clean(p.provider),
+      clean(p.states_searched || p.state),
+      clean(p.locations),
+      clean(p.total_locations),
+      clean(p.confidence),
+      clean(p.evidence_url),
+      clean(p.notes),
     ]);
-    const csv = [headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv],{type:"text/csv"});
+    // UTF-8 BOM so Excel opens correctly without encoding issues
+    const bom = "\uFEFF";
+    const csv = bom + [headers, ...rows].map(r => r.map(v => `"${clean(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href=url; a.download=`prospects-${new Date().toISOString().slice(0,10)}.csv`;
+    const a = document.createElement("a"); a.href = url; a.download = `prospects-${new Date().toISOString().slice(0,10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
     showToast(`Exported ${exportable.length} prospects!`);
   };
